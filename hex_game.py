@@ -66,7 +66,7 @@ class Hex_Game(gym.Env):
             column: int, color, visited: set
     ) -> Tuple[bool]:
         """
-        Return a pair of bools indicating whether the two 
+        Return a pair of bools indicating whether the two
         borders corresponding to 'color' have been reached.
         """
         visited.add((row, column))
