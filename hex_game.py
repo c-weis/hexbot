@@ -1,14 +1,14 @@
 import torch
 import gymnasium as gym
 from gymnasium import spaces
-from typing import List, Tuple
+from typing import List, Optional, Tuple, Set
 import pygame
 import numpy as np
 import random
 
 
 class Hex_Game(gym.Env):
-    EMPTY, RED, BLUE = [0, 1, -1]
+    EMPTY, RED, BLUE = [0, 1, 2]
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 1}
 
     def __init__(
@@ -34,8 +34,15 @@ class Hex_Game(gym.Env):
         self.size = size
         self.state = [[Hex_Game.EMPTY for _ in range(size)]
                       for _ in range(size)]
+        self.free_tiles = [x for x in range(self.size * self.size)]
         self.start_color = start_color
-        self.opponent_policy = opponent_policy
+        self.player_color = Hex_Game.RED
+        self.opponent_color = Hex_Game.BLUE
+
+        if opponent_policy is None:
+            self.opponent_policy = self.rand_policy
+        else:
+            opponent_policy
 
         self.action_space = spaces.Discrete(self.size * self.size)
         self._action_to_hexagon = [
@@ -49,8 +56,12 @@ class Hex_Game(gym.Env):
         self.render_mode = render_mode
 
         # If opponent plays first, make that move
-        if start_color == Hex_Game.BLUE:
+        if self.start_color == self.opponent_color:
             self.opponent_play()
+
+    def rand_policy(self, _):
+        rand_free_tile_index = random.randint(0, len(self.free_tiles)-1)
+        return self.free_tiles[rand_free_tile_index]
 
     def neighbours(self, row: int, col: int) -> List[Tuple[int]]:
         """Return the neighbours of (row,col) in a list."""
@@ -63,12 +74,27 @@ class Hex_Game(gym.Env):
 
     def borders_reached_from_tile(
             self, row: int,
-            column: int, color, visited: set
+            column: int,
+            color,
+            visited: Optional[Set] = None
     ) -> Tuple[bool]:
         """
         Return a pair of bools indicating whether the two
         borders corresponding to 'color' have been reached.
+
+        Keywords:
+        row, column: specify the hex tile
+        color: color of the tile placed at this hex tile
+        visited: auxiliary argument for DFS
+
+        Returns a pair of bools:
+        border1: bool indicating if row/col 0 is reachable for
+            color RED/BLUE
+        border2: bool indicating if row/col `size` is reachable for
+            color RED/BLUE
         """
+        if visited is None:
+            visited = set()
         visited.add((row, column))
         neibs = [neib for neib in self.neighbours(
             row, column) if neib not in visited]
@@ -84,7 +110,7 @@ class Hex_Game(gym.Env):
                 border2 = border2 or b2
         return border1, border2
 
-    def play_tile(self, row: int, column: int, color) -> bool:
+    def play_tile(self, action: int, color) -> bool:
         """
         Play a tile of the color at the specified location.
 
@@ -96,22 +122,19 @@ class Hex_Game(gym.Env):
         Returns a bool indicating whether this play won the game
         for the given color.
         """
+        row, column = self._action_to_hexagon[action]
+        self.free_tiles.remove(action)
         self.state[column][row] = color
 
-        visited = set()
         border1, border2 = self.borders_reached_from_tile(
-            row, column, color, visited)
+            row, column, color)
 
         return border1 and border2
 
     def opponent_play(self):
         """Execute opponent policy. Return whether opponent wins."""
-        if self.opponent_policy is None:
-            return False
-        else:
-            self.opponent_policy(self.state)
-
-        return False
+        opponent_action = self.opponent_policy(self.state)
+        return self.play_tile(opponent_action, self.opponent_color)
 
     def reset(self):
         """Reset the game state."""
@@ -126,17 +149,20 @@ class Hex_Game(gym.Env):
         """Step the environment given the current action.
 
         Keywords:
-        action -- a number between 0 and self.size ** 2 -1
-        Returns a tuple consisting of
-        observation --
-        reward --
-        terminated --
-        I DON'T KNOW TODO --
-        info --
-        """
-        row, column = self._action_to_hexagon[action]
+        action: a number between 0 and self.size ** 2 -1
 
-        terminated = self.play_tile(row, column, self.player_color)
+        Returns a tuple consisting of:
+        observation:
+        reward:
+        terminated:
+        _: False
+        info:
+        """
+        terminated = self.play_tile(action, self.player_color)
+
+        # DEBUGGING TODO(c): remove
+        if self.render_mode == "human":
+            self._render_frame()
 
         observation = self.state
         info = None
@@ -278,6 +304,13 @@ class Hex_Game(gym.Env):
                 pygame.display.quit()
                 pygame.quit()
 
+    """ SAVE/LOAD THINGS """
+    # def save_state(self, file_name):
+    # TODO(c): fill this in
+
+    # def load_state(self, file_name):
+    # TODO(c): fill this in
+
 
 def main():
     size = 5
@@ -285,7 +318,7 @@ def main():
     hg = Hex_Game(size, start_color)
     terminated = False
     while not terminated:
-        random_action = random.randint(0, size*size-1)
+        random_action = hg.free_tiles[random.randint(0, len(hg.free_tiles)-1)]
         _, _, terminated, _, _ = hg.step(random_action)
     input("Press Enter to quit.")
 
