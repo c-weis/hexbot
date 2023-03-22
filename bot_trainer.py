@@ -44,3 +44,25 @@ class Bot_Trainer:
                 for game in games:
                     "game.step()"
                 # Feed into bot etc.
+
+        # TODO(CD): finish sampling method
+
+    def train(self):
+        """ Trains the brain. """
+        # TODO(CD, CW): implement training next week
+
+    def calc_advantages(self):
+        """ Calculate advantages """
+        # TODO(CW): implement advantages (use numpy arrays)
+
+    def calc_loss(self):
+        """ Calculate loss """
+        # TODO(CW): implement PPO loss function (use numpy arrays)
+
+
+def main():
+    """ write test code here """
+
+
+if __name__ == "__main__":
+    main()
