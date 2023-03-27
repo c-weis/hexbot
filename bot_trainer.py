@@ -1,52 +1,95 @@
 from hex_game import Hex_Game
 from hex_bot import Hex_Bot
-
 from random import randint
 import torch
+from torch.distributions import Categorical
+from typing import Dict, List
 import numpy as np
+
+if torch.cuda.is_available():
+    device = torch.device("cuda:1")
+else:
+    device = torch.device("cpu")
 
 
 class Bot_Trainer:
     """ PPO Trainer for hex_game bots. """
 
     def __init__(self, game_size, bot_brain):
-        self.workers = 8
+        self.workers = 2
         self.game_size = game_size
-        self.sampling_steps = self.game_size * self.game_size // 2 + 1
+        # TODO: set this to 128 (5 is for testing)
+        self.sampling_steps = 5
 
         self.trainee = bot_brain
         # TODO(c): define hyperparameters here
 
-    def sample(self):
-        """ Sends workers into the game, collects experience. """
-        actions = np.zeroes((self.workers, self.sampling_steps),
-                            dtype=np.int32)
-        log_pis = np.zeroes((self.workers, self.sampling.steps),
-                            dtype=np.float32)
+        # TODO: Instantiate these games in paralellel processes for speed up
+        self.worker_games = [Hex_Game(size=self.game_size, start_color=randint(0,1), 
+                                      auto_reset=True) for _ in range(self.workers)]
+
+    def sample(self) -> Dict[str, np.ndarray]:
+        """ 
+        Lets workers play the game with 'self.trainee' as policy. 
+        """
         states = np.zeroes((self.workers, self.sampling.steps,
                             self.game_size, self.game_size), dtype=np.uint8)
-        rewards = np.zeroes((self.workers, self.sampling.steps),
-                            dtype=np.float32)
-        advantages = np.zeroes((self.workers, self.sampling.steps),
+        values = np.zeroes((self.workers, self.sampling.steps),
                                dtype=np.float32)
+        actions = np.zeroes((self.workers, self.sampling_steps),
+                            dtype=np.int32)
+        log_prob_actions = np.zeroes((self.workers, self.sampling.steps),
+                            dtype=np.float32)
         terminations = np.zeroes((self.workers, self.sampling.steps),
                                  dtype=np.bool)
+        rewards = np.zeroes((self.workers, self.sampling.steps),
+                            dtype=np.float32)
 
-        color_indices = [randint(0, 1) for _ in range(self.workers)]
-        start_color = [Hex_Game.RED, Hex_Game.BLUE]
-        games = [Hex_Game(self.game_size, start_color[color_idx])
-                 for color_idx in color_indices]
         for t in range(self.sampling_steps):
             with torch.no_grad():
-                states[:, t] = np.array([game.state for game in games])
+                for i, game in enumerate(self.worker_games):
+                    # Record current game state
+                    states[i,t] = game.flat_state()
+                    # Compute action and value using bot brain
+                    pi, v = self.trainee.forward(torch.tensor(states[i,t]), device=device)
+                    # Move computations to CPU, and numpy-ize
+                    pi, v = pi.cpu().numpy(), v.cpu().numpy()
+                    # Set invalid actions to zero
+                    masked_pi = torch.tensor(game.action_mask(pi), device=device)
+                    # Make into prob distribution
+                    masked_pi_prob = Categorical(masked_pi)
+                    # Sample an action from the valid ones
+                    action = masked_pi_prob.sample()
 
-                # Test state array
-                for game in games:
-                    "game.step()"
-                # Feed into bot etc.
+                    # Record values, actions, and action probs
+                    values[t] = v
+                    actions[t] = a
+                    # Need to numpy-ize again
+                    log_prob_actions[t] = masked_pi_prob.log_prob(action).numpy()
 
-        # TODO(CD): finish sampling method
+                    # Apply action to game state
+                    _, reward, terminated, _, info = game.step(action)
+                    
+                    # Record termination and rewards
+                    terminations[i, t] = terminated
+                    rewards[i,t] = rewards
 
+        advantages = _calc_advantages(terminations, values, rewards)        
+        samples_dict = {
+            "states" : states,
+            "values" : values,
+            "actions" : actions,
+            "log_prob_actions" : log_prob_actions,
+            "rewards" : rewards
+        }
+
+        # Torchify and flatten
+        for key, val in samples_dict.items():
+            shape = val.shape()
+            samples_dict[key] = torch.tensor(val.reshape(shape[0]*shape[1], *shape[2:]), device=device)
+
+        return samples_dict
+    
     def train(self):
         """ Trains the brain. """
         # TODO(CD, CW): implement training next week

@@ -8,15 +8,19 @@ import random
 
 
 class Hex_Game(gym.Env):
-    EMPTY, RED, BLUE = [0, 1, 2]
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 1}
+    EMPTY, RED, BLUE = [0, 1, -1]
+    PLAYER_COLOR = RED
+    OPPONENT_COLOR = BLUE
+    """ Rendering parameters """
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 2}
 
     def __init__(
             self,
             size: int = 5,
             start_color=RED,
             opponent_policy=None,
-            render_mode="human"):
+            render_mode="human",
+            auto_reset=False):
         """
         Initialises Hex Game as a gymnasium environment.
 
@@ -32,12 +36,13 @@ class Hex_Game(gym.Env):
         """
         super().__init__()
         self.size = size
-        self.state = [[Hex_Game.EMPTY for _ in range(size)]
-                      for _ in range(size)]
+        self.state = np.array([[Hex_Game.EMPTY for _ in range(size)]
+                      for _ in range(size)])
         self.free_tiles = [x for x in range(self.size * self.size)]
         self.start_color = start_color
-        self.player_color = Hex_Game.RED
-        self.opponent_color = Hex_Game.BLUE
+        self.player_color = Hex_Game.PLAYER_COLOR
+        self.opponent_color = Hex_Game.OPPONENT_COLOR
+        self.auto_reset = auto_reset
 
         if opponent_policy is None:
             self.opponent_policy = self.rand_policy
@@ -59,12 +64,34 @@ class Hex_Game(gym.Env):
         if self.start_color == self.opponent_color:
             self.opponent_play()
 
+    def flat_state(self):
+        """
+        Getter function returning the flattened state of the game.
+        """
+        return self.state.reshape((self.size*self.size))
+    
+    def action_mask(self, action_probs: np.ndarray):
+        """
+        Expects np.array of action probabilities of length size*size
+        Returns the same np.array with invalid actions set to zero
+        """
+        valid_actions = np.zeroes((self.size*self.size))
+        for x in self.free_tiles:
+            valid_actions[x] = action_probs[x]
+        return valid_actions
+
     def rand_policy(self, _):
+        """ 
+        The 'random' policy which ignores the state and 
+        selects a random free tile.
+        """
         rand_free_tile_index = random.randint(0, len(self.free_tiles)-1)
         return self.free_tiles[rand_free_tile_index]
 
     def neighbours(self, row: int, col: int) -> List[Tuple[int]]:
-        """Return the neighbours of (row,col) in a list."""
+        """
+        Return the neighbours of (row,col) in a list
+        """
         return [
             (r, c) for (r, c) in
             [(row-1, col), (row-1, col+1), (row, col-1),
@@ -104,7 +131,7 @@ class Hex_Game(gym.Env):
         border2 = (row == self.size-1 and color == Hex_Game.RED) or (
             column == self.size-1 and color == Hex_Game.BLUE)
         for r, c in neibs:
-            if self.state[c][r] == color:
+            if self.state[c,r] == color:
                 b1, b2 = self.borders_reached_from_tile(r, c, color, visited)
                 border1 = border1 or b1
                 border2 = border2 or b2
@@ -124,7 +151,7 @@ class Hex_Game(gym.Env):
         """
         row, column = self._action_to_hexagon[action]
         self.free_tiles.remove(action)
-        self.state[column][row] = color
+        self.state[column,row] = color
 
         border1, border2 = self.borders_reached_from_tile(
             row, column, color)
@@ -138,9 +165,8 @@ class Hex_Game(gym.Env):
 
     def reset(self):
         """Reset the game state."""
-        self.state = \
-            [[Hex_Game.EMPTY for _ in range(self.size)]
-                for _ in range(self.size)]
+        self.state = np.array([[Hex_Game.EMPTY for _ in range(self.size)]
+                for _ in range(self.size)])
 
         if self.start_color == Hex_Game.BLUE:
             self.opponent_play()
@@ -152,7 +178,7 @@ class Hex_Game(gym.Env):
         action: a number between 0 and self.size ** 2 -1
 
         Returns a tuple consisting of:
-        observation:
+        new_state :
         reward:
         terminated:
         _: False
@@ -164,7 +190,7 @@ class Hex_Game(gym.Env):
         if self.render_mode == "human":
             self._render_frame()
 
-        observation = self.state
+        new_state = self.state
         info = None
 
         reward = 0
@@ -175,10 +201,13 @@ class Hex_Game(gym.Env):
             if terminated:
                 reward = -1
 
+        if self.auto_reset and terminated:
+            self.reset()
+
         if self.render_mode == "human":
             self._render_frame()
 
-        return observation, reward, terminated, False, info
+        return new_state, reward, terminated, False, info
 
     """ RENDERING THINGS """
 
@@ -270,14 +299,14 @@ class Hex_Game(gym.Env):
         # We draw all placed tiles (draw them circular?)
         for column in range(self.size):
             for row in range(self.size):
-                if self.state[column][row] == Hex_Game.RED:
+                if self.state[column, row] == Hex_Game.RED:
                     pygame.draw.circle(
                         canvas,
                         (255, 0, 0),
                         ((row+0.5)*pix_size, (column+0.5)*pix_size),
                         pix_size/4
                     )
-                elif self.state[column][row] == Hex_Game.BLUE:
+                elif self.state[column, row] == Hex_Game.BLUE:
                     pygame.draw.circle(
                         canvas,
                         (0, 0, 255),
@@ -315,7 +344,7 @@ class Hex_Game(gym.Env):
 def main():
     size = 5
     start_color = Hex_Game.RED  # AI goes first
-    hg = Hex_Game(size, start_color)
+    hg = Hex_Game(size, start_color,auto_reset=False)
     terminated = False
     while not terminated:
         random_action = hg.free_tiles[random.randint(0, len(hg.free_tiles)-1)]
