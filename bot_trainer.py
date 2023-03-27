@@ -1,5 +1,5 @@
 from hex_game import Hex_Game
-from hex_bot import Hex_Bot
+from hex_bot import Hex_Bot, Hex_Bot_Brain
 from random import randint
 import torch
 from torch.distributions import Categorical
@@ -22,9 +22,10 @@ class Bot_Trainer:
         self.sampling_steps = 5
 
         self.trainee = bot_brain
-        # TODO(c): define hyperparameters here
+        # TODO: define hyperparameters here
 
-        # TODO: Instantiate these games in paralellel processes for speed up
+        # TODO (long-term): Instantiate these games in paralellel processes for speed up
+        # Games are instantiated (Opponent Policy is currently none)
         self.worker_games = [Hex_Game(size=self.game_size, start_color=randint(0,1), 
                                       auto_reset=True) for _ in range(self.workers)]
 
@@ -32,17 +33,17 @@ class Bot_Trainer:
         """ 
         Lets workers play the game with 'self.trainee' as policy. 
         """
-        states = np.zeroes((self.workers, self.sampling.steps,
-                            self.game_size, self.game_size), dtype=np.uint8)
-        values = np.zeroes((self.workers, self.sampling.steps),
+        states = np.zeros((self.workers, self.sampling_steps,
+                            self.game_size*self.game_size), dtype=np.uint8)
+        values = np.zeros((self.workers, self.sampling_steps),
                                dtype=np.float32)
-        actions = np.zeroes((self.workers, self.sampling_steps),
+        actions = np.zeros((self.workers, self.sampling_steps),
                             dtype=np.int32)
-        log_prob_actions = np.zeroes((self.workers, self.sampling.steps),
+        log_prob_actions = np.zeros((self.workers, self.sampling_steps),
                             dtype=np.float32)
-        terminations = np.zeroes((self.workers, self.sampling.steps),
-                                 dtype=np.bool)
-        rewards = np.zeroes((self.workers, self.sampling.steps),
+        terminations = np.zeros((self.workers, self.sampling_steps),
+                                 dtype=bool)
+        rewards = np.zeros((self.workers, self.sampling_steps),
                             dtype=np.float32)
 
         for t in range(self.sampling_steps):
@@ -51,19 +52,19 @@ class Bot_Trainer:
                     # Record current game state
                     states[i,t] = game.flat_state()
                     # Compute action and value using bot brain
-                    pi, v = self.trainee.forward(torch.tensor(states[i,t]), device=device)
+                    pi, v = self.trainee.forward(torch.tensor(states[i,t], dtype=torch.float32, device=device))
                     # Move computations to CPU, and numpy-ize
                     pi, v = pi.cpu().numpy(), v.cpu().numpy()
                     # Set invalid actions to zero
                     masked_pi = torch.tensor(game.action_mask(pi), device=device)
                     # Make into prob distribution
-                    masked_pi_prob = Categorical(masked_pi)
+                    masked_pi_prob = Categorical(logits=masked_pi)
                     # Sample an action from the valid ones
                     action = masked_pi_prob.sample()
 
                     # Record values, actions, and action probs
                     values[t] = v
-                    actions[t] = a
+                    actions[t] = action
                     # Need to numpy-ize again
                     log_prob_actions[t] = masked_pi_prob.log_prob(action).numpy()
 
@@ -105,7 +106,10 @@ class Bot_Trainer:
 
 def main():
     """ write test code here """
-
+    bot_brain = Hex_Bot_Brain(hex_size=5)
+    trainer = Bot_Trainer(game_size=5, bot_brain=bot_brain)
+    test_sample = trainer.sample()
+    print(test_sample)
 
 if __name__ == "__main__":
     main()

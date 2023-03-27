@@ -7,14 +7,16 @@ import torch.nn as nn
 class Hex_Bot:
     def __init__(self, bot_brain=None):
         if bot_brain is None:
-            self.brain = Bot_Brain()  # or random?
+            self.brain = Bot_Brain()
+        else:
+            self.brain = bot_brain
 
     def choose_action(self, state):
         action = 0  # TODO(c): use your brain
         return action
 
 
-class Bot_Brain(nn.Module):
+class Hex_Bot_Brain(nn.Module):
     """
     An inner class housing the neural net \
     controlling Hex_Bot.
@@ -35,22 +37,22 @@ class Bot_Brain(nn.Module):
         inner_neurons_2: width of second hidden layer
         """
         super().__init__()
-        state_space = hex_size * hex_size * 2
-        nr_actions = hex_size * hex_size  # total number of hexes
-        self.common_head = nn.Sequential([
-            nn.Linear(state_space, inner_neurons_1),
+        inputs = hex_size * hex_size # observation size
+        nr_actions = hex_size * hex_size  # action size
+        self.common_head = nn.Sequential(
+            nn.Linear(inputs, inner_neurons_1),
             nn.Tanh(),
             nn.Linear(inner_neurons_1, inner_neurons_2),
             nn.Tanh()
-        ])
-        self.policy_tail = nn.Sequential([
+        )
+        self.policy_tail = nn.Sequential(
             nn.Linear(inner_neurons_2, nr_actions),
             nn.Tanh()
-        ])
-        self.value_tail = nn.Sequential([  # separated for clarity
+        )
+        self.value_tail = nn.Sequential(  # separated for clarity
             nn.Linear(inner_neurons_2, 1),
             nn.Tanh()
-        ])
+        )
 
     def forward(self, x):
         """

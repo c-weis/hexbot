@@ -75,7 +75,7 @@ class Hex_Game(gym.Env):
         Expects np.array of action probabilities of length size*size
         Returns the same np.array with invalid actions set to zero
         """
-        valid_actions = np.zeroes((self.size*self.size))
+        valid_actions = np.zeros((self.size*self.size))
         for x in self.free_tiles:
             valid_actions[x] = action_probs[x]
         return valid_actions
