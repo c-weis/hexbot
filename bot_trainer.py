@@ -27,7 +27,8 @@ class Bot_Trainer:
         # TODO (long-term): Instantiate these games in paralellel processes for speed up
         # Games are instantiated (Opponent Policy is currently none)
         self.worker_games = [Hex_Game(size=self.game_size, start_color=randint(0,1), 
-                                      auto_reset=True) for _ in range(self.workers)]
+                                      render_mode=None, auto_reset=True) 
+                                      for _ in range(self.workers)]
 
     def sample(self) -> Dict[str, np.ndarray]:
         """ 
@@ -63,30 +64,34 @@ class Bot_Trainer:
                     action = masked_pi_prob.sample()
 
                     # Record values, actions, and action probs
-                    values[t] = v
-                    actions[t] = action
+                    values[i, t] = v
+                    actions[i, t] = action
                     # Need to numpy-ize again
-                    log_prob_actions[t] = masked_pi_prob.log_prob(action).numpy()
+                    log_prob_actions[i, t] = masked_pi_prob.log_prob(action).numpy()
 
                     # Apply action to game state
-                    _, reward, terminated, _, info = game.step(action)
+                    _, reward, terminated, _, info = game.step(int(action))
                     
                     # Record termination and rewards
                     terminations[i, t] = terminated
-                    rewards[i,t] = rewards
+                    rewards[i, t] = reward
 
-        advantages = _calc_advantages(terminations, values, rewards)        
+        # TODO: uncomment advantage calculation once implemented
+        # advantages = _calc_advantages(terminations, values, rewards)
+        advantages = np.zeros((self.workers, self.sampling_steps),
+                            dtype=np.float32)
         samples_dict = {
             "states" : states,
             "values" : values,
             "actions" : actions,
             "log_prob_actions" : log_prob_actions,
-            "rewards" : rewards
+            "rewards" : rewards,
+            "advantages" : advantages
         }
 
         # Torchify and flatten
         for key, val in samples_dict.items():
-            shape = val.shape()
+            shape = val.shape
             samples_dict[key] = torch.tensor(val.reshape(shape[0]*shape[1], *shape[2:]), device=device)
 
         return samples_dict

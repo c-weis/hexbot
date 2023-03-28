@@ -8,7 +8,8 @@ import random
 
 
 class Hex_Game(gym.Env):
-    EMPTY, RED, BLUE = [0, 1, -1]
+    # TODO: Discuss whether [1,2,0] is better
+    EMPTY, RED, BLUE = [0, 1, 2]
     PLAYER_COLOR = RED
     OPPONENT_COLOR = BLUE
     """ Rendering parameters """
@@ -73,9 +74,10 @@ class Hex_Game(gym.Env):
     def action_mask(self, action_probs: np.ndarray):
         """
         Expects np.array of action probabilities of length size*size
-        Returns the same np.array with invalid actions set to zero
+        Returns the same np.array with invalid actions set to 
+        negative infinity
         """
-        valid_actions = np.zeros((self.size*self.size))
+        valid_actions = np.ones((self.size*self.size))*np.NINF
         for x in self.free_tiles:
             valid_actions[x] = action_probs[x]
         return valid_actions
@@ -185,10 +187,6 @@ class Hex_Game(gym.Env):
         info:
         """
         terminated = self.play_tile(action, self.player_color)
-
-        # DEBUGGING TODO(c): remove
-        if self.render_mode == "human":
-            self._render_frame()
 
         new_state = self.state
         info = None
