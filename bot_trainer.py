@@ -16,11 +16,10 @@ class Bot_Trainer:
     """ PPO Trainer for hex_game bots. """
 
     def __init__(self, game_size, bot_brain):
-        self.workers = 2
         self.game_size = game_size
-        # TODO: set this to 128 (5 is for testing)
-        # Shouldn't it be game_size**2/2 in general?
-        self.sampling_steps = 5
+        # TODO: set this lower for testing)
+        self.workers = 20
+        self.sampling_steps = 128
 
         self.trainee = bot_brain
         # TODO: define hyperparameters here
@@ -28,21 +27,27 @@ class Bot_Trainer:
         # GAE hyperparameters
         self.GAEgamma = 0.99   # discount factor
         self.GAElambda = 0.95  # compromise between
-                               # low variance, high bias (`GAElambda`=0)
-                               # low bias, high variance (`GAElambda`=1)
+        # low variance, high bias (`GAElambda`=0)
+        # low bias, high variance (`GAElambda`=1)
         # Loss hyperparameters
         self.loss_c1 = 0.5
         self.loss_c2 = 0.01
 
         # TODO (long-term): Instantiate these games in paralellel processes for speed up
         # Games are instantiated (Opponent Policy is currently none)
-        self.worker_games = [Hex_Game(size=self.game_size, start_color=randint(0, 1),
-                                      render_mode=None, auto_reset=True)
+        self.start_colors = [Hex_Game.RED if randint(0, 1) == 0 else Hex_Game.BLUE
                              for _ in range(self.workers)]
+        self.worker_games = [Hex_Game(size=self.game_size, start_color=color,
+                                      render_mode=None, auto_reset=True)
+                             for color in self.start_colors]
+        # Watch 0th worker play
+        self.worker_games[0].render_mode = "human"
 
     def sample(self) -> Dict[str, np.ndarray]:
         """
-        Lets workers play the game with 'self.trainee' as policy.
+        Let workers play the game with 'self.trainee' as policy.
+        Return dict of sampled data:
+        states, values, actions, log_prob_actions, rewards, advantages
         """
         states = np.zeros((self.workers, self.sampling_steps,
                            self.game_size*self.game_size), dtype=np.uint8)
@@ -112,31 +117,33 @@ class Bot_Trainer:
         """ 
         Calculate Generalized Advantage Estimate (GAE) following arXiv:1506.02438
         """
-        # TODO(CW): implement tests
         advantages = np.zeros(
             (self.workers, self.sampling_steps), dtype=np.float32)
 
         # fill in last column of advantages
-        # TODO(CW): adjust below if we want the value past the last sampling step
         t_last = self.sampling_steps-1
-        advantages[:, t_last] = - values[:, t_last] * (1.0 - done[:, t_last])
+        with torch.no_grad():
+            game_states = np.array(
+                [game.flat_state() for game in self.worker_games])
+            _, last_value_gpu = self.trainee(torch.tensor(
+                game_states, dtype=torch.float32, device=device))
+            last_value = last_value_gpu.squeeze(dim=1).cpu().numpy()
 
-        for t in range(self.sampling_steps - 2, 0, -1):
+        advantages[:, t_last] = rewards[:, t_last] - values[:, t_last] + \
+            self.GAEgamma * last_value * (1.0 - done[:, t_last])
 
+        # iteratively compute remaining advantages
+        for t in reversed(range(self.sampling_steps - 1)):
             mask_done = 1.0 - done[:, t]
-
             delta_t = rewards[:, t] - values[:, t] + \
                 self.GAEgamma * values[:, t+1] * mask_done
-
             advantages[:, t] = delta_t + self.GAEgamma * \
                 self.GAElambda * advantages[:, t+1] * mask_done
 
         return advantages
 
-
     def calc_loss(self, samples, CLIPeps):
         """ Calculate loss """
-        # TODO(CW): implement tests
         # TODO(CW): Normalize advantages??
         advantages = samples["advantages"]
         states = samples["states"]
@@ -158,7 +165,7 @@ class Bot_Trainer:
         loss_VF = np.average((new_value - old_returns)**2)
 
         # Compute entropy bonus loss
-        loss_S = np.average(new_policy.entropy());
+        loss_S = np.average(new_policy.entropy())
 
         # Combine
         loss = loss_CLIP - self.loss_c1 * loss_VF + self.loss_c2 * loss_S
@@ -167,6 +174,7 @@ class Bot_Trainer:
     def train(self):
         """ Trains the brain. """
         # TODO(CD, CW): implement training next week
+        
 
 
 def main():

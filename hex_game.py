@@ -39,7 +39,7 @@ class Hex_Game(gym.Env):
         self.size = size
         self.state = np.array([[Hex_Game.EMPTY for _ in range(size)]
                       for _ in range(size)])
-        self.free_tiles = [x for x in range(self.size * self.size)]
+        self.free_tiles = list(range(self.size * self.size))
         self.start_color = start_color
         self.player_color = Hex_Game.PLAYER_COLOR
         self.opponent_color = Hex_Game.OPPONENT_COLOR
@@ -80,6 +80,7 @@ class Hex_Game(gym.Env):
         valid_actions = np.ones((self.size*self.size))*np.NINF
         for x in self.free_tiles:
             valid_actions[x] = action_probs[x]
+
         return valid_actions
 
     def rand_policy(self, _):
@@ -169,6 +170,7 @@ class Hex_Game(gym.Env):
         """Reset the game state."""
         self.state = np.array([[Hex_Game.EMPTY for _ in range(self.size)]
                 for _ in range(self.size)])
+        self.free_tiles = list(range(self.size * self.size))
 
         if self.start_color == Hex_Game.BLUE:
             self.opponent_play()
