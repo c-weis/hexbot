@@ -5,11 +5,21 @@ import torch
 from torch.distributions import Categorical
 from typing import Dict, List
 import numpy as np
+import time
+
+SERIOUS_COMPUTATION = False
 
 if torch.cuda.is_available():
+    print("Using CUDA")
     device = torch.device("cuda:1")
+# To use need "conda install torchaudio -c pytorch-nightly"
+elif torch.backends.mps.is_available() and SERIOUS_COMPUTATION:
+    print("Using MPS")
+    device = torch.device("mps")
 else:
+    print("Using CPU")
     device = torch.device("cpu")
+
 
 
 class Bot_Trainer:
@@ -38,10 +48,10 @@ class Bot_Trainer:
         self.start_colors = [Hex_Game.RED if randint(0, 1) == 0 else Hex_Game.BLUE
                              for _ in range(self.workers)]
         self.worker_games = [Hex_Game(size=self.game_size, start_color=color,
-                                      render_mode=None, auto_reset=True)
+                                      render_mode="nonhuman", auto_reset=True)
                              for color in self.start_colors]
         # Watch 0th worker play
-        self.worker_games[0].render_mode = "human"
+        # self.worker_games[0].render_mode = "human"
 
     def sample(self) -> Dict[str, np.ndarray]:
         """
@@ -74,7 +84,7 @@ class Bot_Trainer:
                     pi, v = pi.cpu().numpy(), v.cpu().numpy()
                     # Set invalid actions to zero
                     masked_pi = torch.tensor(
-                        game.action_mask(pi), device=device)
+                        game.action_mask(pi), dtype=torch.float32, device=device)
                     # Make into prob distribution
                     masked_pi_prob = Categorical(logits=masked_pi)
                     # Sample an action from the valid ones
@@ -85,7 +95,7 @@ class Bot_Trainer:
                     actions[i, t] = action
                     # Need to numpy-ize again
                     log_prob_actions[i, t] = masked_pi_prob.log_prob(
-                        action).numpy()
+                        action).cpu().numpy()
 
                     # Apply action to game state
                     _, reward, terminated, _, info = game.step(int(action))
@@ -179,11 +189,14 @@ class Bot_Trainer:
 
 def main():
     """ write test code here """
-    bot_brain = Hex_Bot_Brain(hex_size=5)
+    bot_brain = Hex_Bot_Brain(hex_size=5).to(device)
     trainer = Bot_Trainer(game_size=5, bot_brain=bot_brain)
     test_sample = trainer.sample()
     print(test_sample)
 
 
 if __name__ == "__main__":
+    start_time = time.time()
     main()
+    print("--- main() took %s seconds ---" % (time.time() - start_time))
+

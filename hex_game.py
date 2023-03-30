@@ -6,7 +6,6 @@ import pygame
 import numpy as np
 import random
 
-
 class Hex_Game(gym.Env):
     # TODO: Discuss whether [1,2,0] is better
     EMPTY, RED, BLUE = [0, 1, 2]
