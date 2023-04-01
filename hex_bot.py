@@ -7,7 +7,7 @@ import torch.nn as nn
 class Hex_Bot:
     def __init__(self, bot_brain=None):
         if bot_brain is None:
-            self.brain = Bot_Brain()
+            self.brain = Hex_Bot_Brain()
         else:
             self.brain = bot_brain
 

@@ -73,6 +73,7 @@ class Bot_Trainer:
                            dtype=np.float32)
 
         for t in range(self.sampling_steps):
+            action_masks = torch.tensor(self.get_numpy_action_masks())
             with torch.no_grad():
                 for i, game in enumerate(self.worker_games):
                     # Record current game state
@@ -80,18 +81,16 @@ class Bot_Trainer:
                     # Compute action and value using bot brain
                     pi, v = self.trainee(torch.tensor(
                         states[i, t], dtype=torch.float32, device=device))
-                    # Move computations to CPU, and numpy-ize
-                    pi, v = pi.cpu().numpy(), v.cpu().numpy()
-                    # Set invalid actions to zero
-                    masked_pi = torch.tensor(
-                        game.action_mask(pi), dtype=torch.float32, device=device)
+
+                    ## Set invalid actions to zero
+                    masked_pi = action_masks[i] + pi
                     # Make into prob distribution
                     masked_pi_prob = Categorical(logits=masked_pi)
                     # Sample an action from the valid ones
                     action = masked_pi_prob.sample()
 
                     # Record values, actions, and action probs
-                    values[i, t] = v
+                    values[i, t] = v.cpu().numpy()
                     actions[i, t] = action
                     # Need to numpy-ize again
                     log_prob_actions[i, t] = masked_pi_prob.log_prob(
@@ -122,6 +121,12 @@ class Bot_Trainer:
                 shape[0]*shape[1], *shape[2:]), device=device)
 
         return samples_dict
+
+    def get_numpy_action_masks(self):
+        action_masks = np.ones((self.workers, self.game_size * self.game_size)) * np.NINF
+        for idx, game in enumerate(self.worker_games):
+            action_masks[idx, game.free_tiles] = 0
+        return action_masks
 
     def calc_advantages(self, done, values, rewards):
         """ 
@@ -184,7 +189,7 @@ class Bot_Trainer:
     def train(self):
         """ Trains the brain. """
         # TODO(CD, CW): implement training next week
-        
+
 
 
 def main():
