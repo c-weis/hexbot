@@ -73,7 +73,8 @@ class Bot_Trainer:
                            dtype=np.float32)
 
         for t in range(self.sampling_steps):
-            action_masks = torch.tensor(self.get_numpy_action_masks())
+            action_masks = torch.tensor(self.get_numpy_action_masks(), 
+                                        dtype=torch.float32, device=device)
             with torch.no_grad():
                 for i, game in enumerate(self.worker_games):
                     # Record current game state
@@ -118,7 +119,7 @@ class Bot_Trainer:
         for key, val in samples_dict.items():
             shape = val.shape
             samples_dict[key] = torch.tensor(val.reshape(
-                shape[0]*shape[1], *shape[2:]), device=device)
+                shape[0]*shape[1], *shape[2:]), dtype=torch.float32, device=device)
 
         return samples_dict
 
@@ -167,20 +168,21 @@ class Bot_Trainer:
 
         # Calculate ratio of new to old policy on sampled states
         new_policy, new_value = self.trainee(states)
-        ratio = np.exp(new_policy.log_prob(actions) - old_log_prob)
+        print(new_policy[0].log_prob(0))
+        ratio = torch.exp(new_policy.log_prob(actions) - old_log_prob)
 
-        loss_CLIP = np.mean(np.min(
-            ratio * advantages, np.clamp(ratio, 1-CLIPeps, 1+CLIPeps) * advantages))
+        loss_CLIP = torch.mean(torch.min(
+            ratio * advantages, torch.clamp(ratio, 1-CLIPeps, 1+CLIPeps) * advantages))
 
         # get sampled returns - this is what "value" is trying to estimate
         old_returns = samples["rewards"] + samples["advantages"]
 
         # Compute value function loss
         # TODO(CW): Compute clipped VF Loss?
-        loss_VF = np.average((new_value - old_returns)**2)
+        loss_VF = torch.average((new_value - old_returns)**2)
 
         # Compute entropy bonus loss
-        loss_S = np.average(new_policy.entropy())
+        loss_S = torch.average(new_policy.entropy())
 
         # Combine
         loss = loss_CLIP - self.loss_c1 * loss_VF + self.loss_c2 * loss_S
@@ -189,6 +191,16 @@ class Bot_Trainer:
     def train(self):
         """ Trains the brain. """
         # TODO(CD, CW): implement training next week
+        optimizer = torch.optim.Adam(params=self.trainee.parameters(), lr=0.1)
+        for up in range(50):  # Make hyperparam
+            samples = self.sample()
+            for ep in range(500): # Make hyperparam
+                optimizer.zero_grad()
+                loss = self.calc_loss(samples, CLIPeps=0.1)
+                loss.backward()
+                optimizer.step()             
+
+
 
 
 
@@ -196,8 +208,10 @@ def main():
     """ write test code here """
     bot_brain = Hex_Bot_Brain(hex_size=5).to(device)
     trainer = Bot_Trainer(game_size=5, bot_brain=bot_brain)
-    test_sample = trainer.sample()
-    print(test_sample)
+    # test_sample = trainer.sample()
+    # print(test_sample)
+    trainer.train()
+
 
 
 if __name__ == "__main__":

@@ -59,7 +59,7 @@ class Hex_Bot_Brain(nn.Module):
         Take the game state and return (policy, value).
 
         The input vector x is a one-hot vector of size \
-        hex_size * hex_size * 2.
+        hex_size * hex_size.
         Odd entries correspond to a RED tile, \
         even entries to a BLUE tile \
         covering the corresponding square.
