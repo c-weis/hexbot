@@ -21,24 +21,29 @@ else:
     device = torch.device("cpu")
 
 
-
 class Bot_Trainer:
     """ PPO Trainer for hex_game bots. """
 
     def __init__(self, game_size, bot_brain):
         self.game_size = game_size
+        self.total_actions = game_size * game_size
         # TODO: set this lower for testing)
-        self.workers = 20
-        self.sampling_steps = 128
+        self.workers = 64  # number of concurrent games/threads
+        self.sampling_steps = 32  # number of steps per sampling thread
+        self.batch_size = self.workers * self.sampling_steps  # nr of samples in a batch
+        self.mini_batch_size = 4  # number of elements per mini batch (weight update)
+        self.mini_batches = self.batch_size // self.mini_batch_size  # number of minibatches per sample update
 
-        self.trainee = bot_brain
-        # TODO: define hyperparameters here
+        self.trainee = bot_brain  # nn.Module to be trained
+        self.sampling_updates = 50  # number of times samples are collected during a training run
+        self.episodes_per_sampling = 50  # number of episodes in between consecutive sampling
 
-        # GAE hyperparameters
+        # Generalized Advantage Estimation  hyperparameters
         self.GAEgamma = 0.99   # discount factor
         self.GAElambda = 0.95  # compromise between
         # low variance, high bias (`GAElambda`=0)
         # low bias, high variance (`GAElambda`=1)
+
         # Loss hyperparameters
         self.loss_c1 = 0.5
         self.loss_c2 = 0.01
@@ -72,9 +77,14 @@ class Bot_Trainer:
         rewards = np.zeros((self.workers, self.sampling_steps),
                            dtype=np.float32)
 
+        # As opposed to the above, action_masks are used in each computation step
+        # on the device. Hence, we instantiate it there.
+        action_masks = torch.zeros((self.workers, self.sampling_steps,
+                                    self.game_size*self.game_size), dtype=torch.float32, device=device)
+
         for t in range(self.sampling_steps):
-            action_masks = torch.tensor(self.get_numpy_action_masks(), 
-                                        dtype=torch.float32, device=device)
+            action_masks[:, t, :] = torch.tensor(self.get_numpy_action_masks(),
+                                                 dtype=torch.float32, device=device)
             with torch.no_grad():
                 for i, game in enumerate(self.worker_games):
                     # Record current game state
@@ -83,8 +93,8 @@ class Bot_Trainer:
                     pi, v = self.trainee(torch.tensor(
                         states[i, t], dtype=torch.float32, device=device))
 
-                    ## Set invalid actions to zero
-                    masked_pi = action_masks[i] + pi
+                    # Set invalid actions to zero
+                    masked_pi = action_masks[i, t, :] + pi
                     # Make into prob distribution
                     masked_pi_prob = Categorical(logits=masked_pi)
                     # Sample an action from the valid ones
@@ -110,6 +120,7 @@ class Bot_Trainer:
             "states": states,
             "values": values,
             "actions": actions,
+            "action_masks": action_masks.cpu().numpy(),
             "log_prob_actions": log_prob_actions,
             "rewards": rewards,
             "advantages": advantages
@@ -124,7 +135,8 @@ class Bot_Trainer:
         return samples_dict
 
     def get_numpy_action_masks(self):
-        action_masks = np.ones((self.workers, self.game_size * self.game_size)) * np.NINF
+        action_masks = np.ones(
+            (self.workers, self.game_size * self.game_size)) * np.NINF
         for idx, game in enumerate(self.worker_games):
             action_masks[idx, game.free_tiles] = 0
         return action_masks
@@ -164,11 +176,12 @@ class Bot_Trainer:
         advantages = samples["advantages"]
         states = samples["states"]
         actions = samples["actions"]
+        action_masks = samples["action_masks"]
         old_log_prob = samples["log_prob_actions"]
 
         # Calculate ratio of new to old policy on sampled states
-        new_policy, new_value = self.trainee(states)
-        print(new_policy[0].log_prob(0))
+        new_policy_, new_value = self.trainee(states)
+        new_policy = Categorical(logits=new_policy_ + action_masks)
         ratio = torch.exp(new_policy.log_prob(actions) - old_log_prob)
 
         loss_CLIP = torch.mean(torch.min(
@@ -179,10 +192,10 @@ class Bot_Trainer:
 
         # Compute value function loss
         # TODO(CW): Compute clipped VF Loss?
-        loss_VF = torch.average((new_value - old_returns)**2)
+        loss_VF = torch.mean((new_value - old_returns)**2)
 
         # Compute entropy bonus loss
-        loss_S = torch.average(new_policy.entropy())
+        loss_S = torch.mean(new_policy.entropy())
 
         # Combine
         loss = loss_CLIP - self.loss_c1 * loss_VF + self.loss_c2 * loss_S
@@ -190,32 +203,53 @@ class Bot_Trainer:
 
     def train(self):
         """ Trains the brain. """
-        # TODO(CD, CW): implement training next week
         optimizer = torch.optim.Adam(params=self.trainee.parameters(), lr=0.1)
-        for up in range(50):  # Make hyperparam
+
+        # Metrics
+        average_reward = np.zeros(self.sampling_updates)
+        game_wins = np.zeros(self.sampling_updates, dtype=np.uint)
+        game_losses = np.zeros(self.sampling_updates, dtype=np.uint)
+        win_rate = np.zeros(self.sampling_updates)
+
+        for up in range(self.sampling_updates):
             samples = self.sample()
-            for ep in range(500): # Make hyperparam
-                optimizer.zero_grad()
-                loss = self.calc_loss(samples, CLIPeps=0.1)
-                loss.backward()
-                optimizer.step()             
+            rewards = samples["rewards"]
+            average_reward[up] = torch.mean(rewards)
+            game_wins[up] = torch.count_nonzero(torch.gt(rewards,0))
+            game_losses[up] = torch.count_nonzero(torch.lt(rewards,0))
+            win_rate[up] = game_wins[up] / (game_wins[up] + game_losses[up])
+            print(f"Sample update {up+1}/{self.sampling_updates}")
+            #print(f"Average reward: {average_reward[up]} ")
+            #print(f"Wins/Losses: {game_wins[up]}/{game_losses[up]}")
+            print(f"Win rate: {win_rate[up]*100:0,.1f}%")
+            for ep in range(self.episodes_per_sampling):
+                permuted_batch_indices = torch.randperm(self.batch_size)
+                for mini_batch in range(self.mini_batches):
+                    start = mini_batch * self.mini_batch_size
+                    end = start + self.mini_batch_size
+                    mini_batch_indices = permuted_batch_indices[start:end]
 
+                    mini_batch = dict()
+                    for key, value in samples.items():
+                        mini_batch[key] = value[mini_batch_indices]
 
-
+                    optimizer.zero_grad()
+                    loss = self.calc_loss(mini_batch, CLIPeps=0.1)
+                    loss.backward()
+                    optimizer.step()
 
 
 def main():
     """ write test code here """
-    bot_brain = Hex_Bot_Brain(hex_size=5).to(device)
-    trainer = Bot_Trainer(game_size=5, bot_brain=bot_brain)
+    hex_size = 4
+    bot_brain = Hex_Bot_Brain(hex_size=hex_size).to(device)
+    trainer = Bot_Trainer(game_size=hex_size, bot_brain=bot_brain)
     # test_sample = trainer.sample()
     # print(test_sample)
     trainer.train()
-
 
 
 if __name__ == "__main__":
     start_time = time.time()
     main()
     print("--- main() took %s seconds ---" % (time.time() - start_time))
-
