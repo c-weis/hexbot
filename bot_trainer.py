@@ -31,12 +31,16 @@ class Bot_Trainer:
         self.workers = 64  # number of concurrent games/threads
         self.sampling_steps = 32  # number of steps per sampling thread
         self.batch_size = self.workers * self.sampling_steps  # nr of samples in a batch
-        self.mini_batch_size = 4  # number of elements per mini batch (weight update)
-        self.mini_batches = self.batch_size // self.mini_batch_size  # number of minibatches per sample update
+        # number of elements per mini batch (weight update)
+        self.mini_batch_size = 64
+        # number of minibatches per sample update
+        self.mini_batches = self.batch_size // self.mini_batch_size
 
         self.trainee = bot_brain  # nn.Module to be trained
-        self.sampling_updates = 50  # number of times samples are collected during a training run
-        self.episodes_per_sampling = 50  # number of episodes in between consecutive sampling
+        # number of times samples are collected during a training run
+        self.sampling_updates = 100
+        # number of episodes in between consecutive sampling
+        self.episodes_per_sampling = 200
 
         # Generalized Advantage Estimation  hyperparameters
         self.GAEgamma = 0.99   # discount factor
@@ -120,17 +124,20 @@ class Bot_Trainer:
             "states": states,
             "values": values,
             "actions": actions,
-            "action_masks": action_masks.cpu().numpy(),
             "log_prob_actions": log_prob_actions,
             "rewards": rewards,
-            "advantages": advantages
+            "advantages": advantages,
+            "action_masks": action_masks
         }
 
         # Torchify and flatten
         for key, val in samples_dict.items():
             shape = val.shape
-            samples_dict[key] = torch.tensor(val.reshape(
-                shape[0]*shape[1], *shape[2:]), dtype=torch.float32, device=device)
+            if key == "action_masks":
+                samples_dict[key] = val.reshape(shape[0]*shape[1], *shape[2:])
+            else:
+                samples_dict[key] = torch.tensor(val.reshape(
+                    shape[0]*shape[1], *shape[2:]), dtype=torch.float32, device=device)
 
         return samples_dict
 
@@ -170,10 +177,13 @@ class Bot_Trainer:
 
         return advantages
 
-    def calc_loss(self, samples, CLIPeps):
+    def calc_loss(self, samples, CLIPeps, metrics=None):
         """ Calculate loss """
-        # TODO(CW): Normalize advantages??
         advantages = samples["advantages"]
+        # Normalise advantages
+        adv_mean, adv_stddev = torch.std_mean(advantages)
+        advantages = (advantages - adv_mean)/adv_stddev
+
         states = samples["states"]
         actions = samples["actions"]
         action_masks = samples["action_masks"]
@@ -197,6 +207,30 @@ class Bot_Trainer:
         # Compute entropy bonus loss
         loss_S = torch.mean(new_policy.entropy())
 
+        if metrics is not None:
+            nr_params = sum(param.numel() for param in self.trainee.parameters() if param.requires_grad)
+            self.trainee.zero_grad()
+            loss_CLIP.backward(retain_graph=True)
+            clip_grad = 0
+            for param in self.trainee.parameters():
+                if param.grad is not None:
+                    clip_grad += torch.sum(torch.abs(param.grad))
+            metrics["clip"] += clip_grad
+            self.trainee.zero_grad()
+            loss_VF.backward(retain_graph=True)
+            vf_grad = 0
+            for param in self.trainee.parameters():
+                if param.grad is not None:
+                    vf_grad += torch.sum(torch.abs(param.grad))
+            metrics["value_function"] += vf_grad
+            self.trainee.zero_grad()
+            loss_S.backward(retain_graph=True)
+            s_grad = 0
+            for param in self.trainee.parameters():
+                if param.grad is not None:
+                    s_grad += torch.sum(torch.abs(param.grad))
+            metrics["entropy"] += s_grad
+
         # Combine
         loss = loss_CLIP - self.loss_c1 * loss_VF + self.loss_c2 * loss_S
         return loss
@@ -215,13 +249,18 @@ class Bot_Trainer:
             samples = self.sample()
             rewards = samples["rewards"]
             average_reward[up] = torch.mean(rewards)
-            game_wins[up] = torch.count_nonzero(torch.gt(rewards,0))
-            game_losses[up] = torch.count_nonzero(torch.lt(rewards,0))
+            game_wins[up] = torch.count_nonzero(torch.gt(rewards, 0))
+            game_losses[up] = torch.count_nonzero(torch.lt(rewards, 0))
             win_rate[up] = game_wins[up] / (game_wins[up] + game_losses[up])
             print(f"Sample update {up+1}/{self.sampling_updates}")
             #print(f"Average reward: {average_reward[up]} ")
             #print(f"Wins/Losses: {game_wins[up]}/{game_losses[up]}")
             print(f"Win rate: {win_rate[up]*100:0,.1f}%")
+            gradients = {
+                    "clip": 0,
+                    "value_function": 0,
+                    "entropy": 0
+                }
             for ep in range(self.episodes_per_sampling):
                 permuted_batch_indices = torch.randperm(self.batch_size)
                 for mini_batch in range(self.mini_batches):
@@ -229,20 +268,24 @@ class Bot_Trainer:
                     end = start + self.mini_batch_size
                     mini_batch_indices = permuted_batch_indices[start:end]
 
-                    mini_batch = dict()
+                    mini_batch_samples = dict()
                     for key, value in samples.items():
-                        mini_batch[key] = value[mini_batch_indices]
+                        mini_batch_samples[key] = value[mini_batch_indices]
 
                     optimizer.zero_grad()
-                    loss = self.calc_loss(mini_batch, CLIPeps=0.1)
+                    loss = self.calc_loss(mini_batch_samples, CLIPeps=1-up/self.sampling_updates, metrics=gradients)
                     loss.backward()
                     optimizer.step()
+            for key in gradients:
+                gradients[key] = gradients[key] / (self.episodes_per_sampling)
+            print(f"Gradients: {gradients}")
 
 
 def main():
     """ write test code here """
-    hex_size = 4
-    bot_brain = Hex_Bot_Brain(hex_size=hex_size).to(device)
+    hex_size = 3
+    bot_brain = Hex_Bot_Brain(
+        hex_size=hex_size, inner_neurons_1=18, inner_neurons_2=18).to(device)
     trainer = Bot_Trainer(game_size=hex_size, bot_brain=bot_brain)
     # test_sample = trainer.sample()
     # print(test_sample)
