@@ -37,7 +37,7 @@ class Hex_Bot_Brain(nn.Module):
         inner_neurons_2: width of second hidden layer
         """
         super().__init__()
-        inputs = hex_size * hex_size # observation size
+        inputs = hex_size * hex_size * 3  # observation size
         nr_actions = hex_size * hex_size  # action size
         self.common_head = nn.Sequential(
             nn.Linear(inputs, inner_neurons_1),
@@ -54,17 +54,56 @@ class Hex_Bot_Brain(nn.Module):
             nn.Tanh()
         )
 
+    def optimal2Dstrat(self, x):
+        pi = torch.tensor(
+            [-1000000, 1_000_000, 1_000_000, -1000000], dtype=torch.float32)
+        if x[2] == 1:
+            if x[6] == 1:
+                pi = torch.tensor(
+                    [-1000000, -1000000, 1_000_000, -1000000], dtype=torch.float32)
+            else:
+                pi = torch.tensor(
+                    [-1000000, 1_000_000, -1000000, -1000000], dtype=torch.float32)
+        elif x[5] == 1:
+            if x[6] == 1:
+                pi = torch.tensor(
+                    [-1000000, -1000000, 1_000_000, -1000000], dtype=torch.float32)
+            else:
+                pi = torch.tensor(
+                    [-1000000, -1000000, -1000000, 1_000_000], dtype=torch.float32)
+        elif x[8] == 1:
+            if x[0] == 1:
+                pi = torch.tensor(
+                    [1_000_000, -1000000, -1000000, -1000000], dtype=torch.float32)
+            else:
+                pi = torch.tensor(
+                    [-1000000, 1_000_000, -1000000, -1000000], dtype=torch.float32)
+        elif x[11] == 1:
+            if x[3] == 1:
+                pi = torch.tensor(
+                    [-1000000, 1_000_000, -1000000, -1000000], dtype=torch.float32)
+            else:
+                pi = torch.tensor(
+                    [1_000_000, -1000000, -1000000, -1000000], dtype=torch.float32)
+        return pi
+
     def forward(self, x):
         """
         Take the game state and return (policy, value).
 
-        The input vector x is a one-hot vector of size \
-        hex_size * hex_size.
-        Odd entries correspond to a RED tile, \
-        even entries to a BLUE tile \
-        covering the corresponding square.
+        The input vector x is a one-hot vector of size
+        hex_size * hex_size * 3.
+        Mod 3, the indices correspond to colours as follows:
+        0 = EMPTY, 1 = RED, 2 = BLUE.
         """
         mid = self.common_head(x)
-        pi = self.policy_tail(mid)
+
+        if x.shape == (64, 12):
+            pi = self.policy_tail(mid)
+            for worker in range(64):
+                pi[worker,:] = self.optimal2Dstrat(x[worker,:])
+        else:
+            pi = self.optimal2Dstrat(x)
+
         v = self.value_tail(mid)
         return pi, v

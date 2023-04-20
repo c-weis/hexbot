@@ -6,6 +6,7 @@ import pygame
 import numpy as np
 import random
 
+
 class Hex_Game(gym.Env):
     # TODO: Discuss whether [1,2,0] is better
     EMPTY, RED, BLUE = [0, 1, 2]
@@ -37,7 +38,7 @@ class Hex_Game(gym.Env):
         super().__init__()
         self.size = size
         self.state = np.array([[Hex_Game.EMPTY for _ in range(size)]
-                      for _ in range(size)])
+                               for _ in range(size)])
         self.free_tiles = list(range(self.size * self.size))
         self.start_color = start_color
         self.player_color = Hex_Game.PLAYER_COLOR
@@ -68,8 +69,14 @@ class Hex_Game(gym.Env):
         """
         Getter function returning the flattened state of the game.
         """
-        return self.state.reshape((self.size*self.size))
-    
+        state = np.zeros((self.size, self.size, 3), dtype=np.float32)
+
+        for x in range(self.size):
+            for y in range(self.size):
+                state[x,y,self.state[x,y]] = 1
+
+        return state.reshape(self.size*self.size*3)
+
     def action_mask(self, action_probs: np.ndarray):
         """
         Expects np.array of action probabilities of length size*size
@@ -133,7 +140,7 @@ class Hex_Game(gym.Env):
         border2 = (row == self.size-1 and color == Hex_Game.RED) or (
             column == self.size-1 and color == Hex_Game.BLUE)
         for r, c in neibs:
-            if self.state[c,r] == color:
+            if self.state[c, r] == color:
                 b1, b2 = self.borders_reached_from_tile(r, c, color, visited)
                 border1 = border1 or b1
                 border2 = border2 or b2
@@ -153,7 +160,7 @@ class Hex_Game(gym.Env):
         """
         row, column = self._action_to_hexagon[action]
         self.free_tiles.remove(action)
-        self.state[column,row] = color
+        self.state[column, row] = color
 
         border1, border2 = self.borders_reached_from_tile(
             row, column, color)
@@ -168,7 +175,7 @@ class Hex_Game(gym.Env):
     def reset(self):
         """Reset the game state."""
         self.state = np.array([[Hex_Game.EMPTY for _ in range(self.size)]
-                for _ in range(self.size)])
+                               for _ in range(self.size)])
         self.free_tiles = list(range(self.size * self.size))
 
         if self.start_color == Hex_Game.BLUE:
@@ -343,7 +350,7 @@ class Hex_Game(gym.Env):
 def main():
     size = 5
     start_color = Hex_Game.RED  # AI goes first
-    hg = Hex_Game(size, start_color,auto_reset=False)
+    hg = Hex_Game(size, start_color, auto_reset=False)
     terminated = False
     while not terminated:
         random_action = hg.free_tiles[random.randint(0, len(hg.free_tiles)-1)]

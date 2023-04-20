@@ -27,7 +27,6 @@ class Bot_Trainer:
     def __init__(self, game_size, bot_brain):
         self.game_size = game_size
         self.total_actions = game_size * game_size
-        # TODO: set this lower for testing)
         self.workers = 64  # number of concurrent games/threads
         self.sampling_steps = 32  # number of steps per sampling thread
         self.batch_size = self.workers * self.sampling_steps  # nr of samples in a batch
@@ -54,7 +53,7 @@ class Bot_Trainer:
 
         # TODO (long-term): Instantiate these games in paralellel processes for speed up
         # Games are instantiated (Opponent Policy is currently none)
-        self.start_colors = [Hex_Game.RED if randint(0, 1) == 0 else Hex_Game.BLUE
+        self.start_colors = [Hex_Game.RED #if randint(0, 1) == 0 else Hex_Game.BLUE
                              for _ in range(self.workers)]
         self.worker_games = [Hex_Game(size=self.game_size, start_color=color,
                                       render_mode="nonhuman", auto_reset=True)
@@ -69,7 +68,7 @@ class Bot_Trainer:
         states, values, actions, log_prob_actions, rewards, advantages
         """
         states = np.zeros((self.workers, self.sampling_steps,
-                           self.game_size*self.game_size), dtype=np.uint8)
+                           self.game_size * self.game_size * 3), dtype=np.uint8)
         values = np.zeros((self.workers, self.sampling_steps),
                           dtype=np.float32)
         actions = np.zeros((self.workers, self.sampling_steps),
@@ -84,7 +83,7 @@ class Bot_Trainer:
         # As opposed to the above, action_masks are used in each computation step
         # on the device. Hence, we instantiate it there.
         action_masks = torch.zeros((self.workers, self.sampling_steps,
-                                    self.game_size*self.game_size), dtype=torch.float32, device=device)
+                                    self.total_actions), dtype=torch.float32, device=device)
 
         for t in range(self.sampling_steps):
             action_masks[:, t, :] = torch.tensor(self.get_numpy_action_masks(),
@@ -160,9 +159,9 @@ class Bot_Trainer:
         with torch.no_grad():
             game_states = np.array(
                 [game.flat_state() for game in self.worker_games])
-            _, last_value_gpu = self.trainee(torch.tensor(
+            _, last_value_device = self.trainee(torch.tensor(
                 game_states, dtype=torch.float32, device=device))
-            last_value = last_value_gpu.squeeze(dim=1).cpu().numpy()
+            last_value = last_value_device.squeeze(dim=1).cpu().numpy()
 
         advantages[:, t_last] = rewards[:, t_last] - values[:, t_last] + \
             self.GAEgamma * last_value * (1.0 - done[:, t_last])
@@ -207,8 +206,10 @@ class Bot_Trainer:
         # Compute entropy bonus loss
         loss_S = torch.mean(new_policy.entropy())
 
+        """
         if metrics is not None:
-            nr_params = sum(param.numel() for param in self.trainee.parameters() if param.requires_grad)
+            nr_params = sum(param.numel()
+                            for param in self.trainee.parameters() if param.requires_grad)
             self.trainee.zero_grad()
             loss_CLIP.backward(retain_graph=True)
             clip_grad = 0
@@ -230,10 +231,12 @@ class Bot_Trainer:
                 if param.grad is not None:
                     s_grad += torch.sum(torch.abs(param.grad))
             metrics["entropy"] += s_grad
+        """
 
         # Combine
-        loss = loss_CLIP - self.loss_c1 * loss_VF + self.loss_c2 * loss_S
-        return loss
+        # loss = -(loss_CLIP - self.loss_c1 * loss_VF + self.loss_c2 * loss_S)
+        return loss_VF
+        # return loss
 
     def train(self):
         """ Trains the brain. """
@@ -257,10 +260,10 @@ class Bot_Trainer:
             #print(f"Wins/Losses: {game_wins[up]}/{game_losses[up]}")
             print(f"Win rate: {win_rate[up]*100:0,.1f}%")
             gradients = {
-                    "clip": 0,
-                    "value_function": 0,
-                    "entropy": 0
-                }
+                "clip": 0,
+                "value_function": 0,
+                "entropy": 0
+            }
             for ep in range(self.episodes_per_sampling):
                 permuted_batch_indices = torch.randperm(self.batch_size)
                 for mini_batch in range(self.mini_batches):
@@ -273,7 +276,8 @@ class Bot_Trainer:
                         mini_batch_samples[key] = value[mini_batch_indices]
 
                     optimizer.zero_grad()
-                    loss = self.calc_loss(mini_batch_samples, CLIPeps=1-up/self.sampling_updates, metrics=gradients)
+                    loss = self.calc_loss(
+                        mini_batch_samples, CLIPeps=1-up/self.sampling_updates, metrics=gradients)
                     loss.backward()
                     optimizer.step()
             for key in gradients:
@@ -283,7 +287,7 @@ class Bot_Trainer:
 
 def main():
     """ write test code here """
-    hex_size = 3
+    hex_size = 2
     bot_brain = Hex_Bot_Brain(
         hex_size=hex_size, inner_neurons_1=18, inner_neurons_2=18).to(device)
     trainer = Bot_Trainer(game_size=hex_size, bot_brain=bot_brain)
