@@ -47,11 +47,9 @@ class Hex_Bot_Brain(nn.Module):
         )
         self.policy_tail = nn.Sequential(
             nn.Linear(inner_neurons_2, nr_actions),
-            nn.Tanh()
         )
         self.value_tail = nn.Sequential(  # separated for clarity
             nn.Linear(inner_neurons_2, 1),
-            nn.Tanh()
         )
 
 

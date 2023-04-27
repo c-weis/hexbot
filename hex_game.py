@@ -75,7 +75,8 @@ class Hex_Game(gym.Env):
 
         for x in range(self.size):
             for y in range(self.size):
-                state[x,y,self.state[x,y]] = 1
+                # TODO(c): figure out whether x and y need to be swapped
+                state[x,y,self.state[y,x]] = 1
 
         return state.reshape(self.size*self.size*3)
 
@@ -101,12 +102,12 @@ class Hex_Game(gym.Env):
         if self.size > 2:
             raise Exception("Uhh, wrong grid size for optimal 2x2 policy")
         if len(self.free_tiles) == 4:
-            return 1;
+            return 1
         elif len(self.free_tiles) == 3:
             if 1 in self.free_tiles and 3 in self.free_tiles:
-                return 1;
+                return 1
             else:
-                return 2;
+                return 2
         elif len(self.free_tiles) == 2:
             if 3 in self.free_tiles:
                 return 3
@@ -116,6 +117,7 @@ class Hex_Game(gym.Env):
             for x in self.free_tiles:
                 return x
 
+    # TODO: reset to random
     def rand_policy(self, _):
         """ 
         The 'random' policy which ignores the state and 
