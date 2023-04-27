@@ -53,10 +53,11 @@ class Bot_Trainer:
 
         # TODO (long-term): Instantiate these games in paralellel processes for speed up
         # Games are instantiated (Opponent Policy is currently none)
-        self.start_colors = [Hex_Game.RED #if randint(0, 1) == 0 else Hex_Game.BLUE
+        self.start_colors = [Hex_Game.RED if randint(0, 1) == 0 else Hex_Game.BLUE
                              for _ in range(self.workers)]
         self.worker_games = [Hex_Game(size=self.game_size, start_color=color,
-                                      render_mode="nonhuman", auto_reset=True)
+                                      render_mode="nonhuman", auto_reset=True, 
+                                      optimal_2x2_play=True) ## ADDED
                              for color in self.start_colors]
         # Watch 0th worker play
         # self.worker_games[0].render_mode = "human"
@@ -234,9 +235,9 @@ class Bot_Trainer:
         """
 
         # Combine
-        # loss = -(loss_CLIP - self.loss_c1 * loss_VF + self.loss_c2 * loss_S)
-        return loss_VF
-        # return loss
+        loss = -(loss_CLIP - self.loss_c1 * loss_VF + self.loss_c2 * loss_S)
+        # return loss_VF
+        return loss
 
     def train(self):
         """ Trains the brain. """

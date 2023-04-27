@@ -54,38 +54,6 @@ class Hex_Bot_Brain(nn.Module):
             nn.Tanh()
         )
 
-    def optimal2Dstrat(self, x):
-        pi = torch.tensor(
-            [-1000000, 1_000_000, 1_000_000, -1000000], dtype=torch.float32)
-        if x[2] == 1:
-            if x[6] == 1:
-                pi = torch.tensor(
-                    [-1000000, -1000000, 1_000_000, -1000000], dtype=torch.float32)
-            else:
-                pi = torch.tensor(
-                    [-1000000, 1_000_000, -1000000, -1000000], dtype=torch.float32)
-        elif x[5] == 1:
-            if x[6] == 1:
-                pi = torch.tensor(
-                    [-1000000, -1000000, 1_000_000, -1000000], dtype=torch.float32)
-            else:
-                pi = torch.tensor(
-                    [-1000000, -1000000, -1000000, 1_000_000], dtype=torch.float32)
-        elif x[8] == 1:
-            if x[0] == 1:
-                pi = torch.tensor(
-                    [1_000_000, -1000000, -1000000, -1000000], dtype=torch.float32)
-            else:
-                pi = torch.tensor(
-                    [-1000000, 1_000_000, -1000000, -1000000], dtype=torch.float32)
-        elif x[11] == 1:
-            if x[3] == 1:
-                pi = torch.tensor(
-                    [-1000000, 1_000_000, -1000000, -1000000], dtype=torch.float32)
-            else:
-                pi = torch.tensor(
-                    [1_000_000, -1000000, -1000000, -1000000], dtype=torch.float32)
-        return pi
 
     def forward(self, x):
         """
@@ -97,13 +65,6 @@ class Hex_Bot_Brain(nn.Module):
         0 = EMPTY, 1 = RED, 2 = BLUE.
         """
         mid = self.common_head(x)
-
-        if x.shape == (64, 12):
-            pi = self.policy_tail(mid)
-            for worker in range(64):
-                pi[worker,:] = self.optimal2Dstrat(x[worker,:])
-        else:
-            pi = self.optimal2Dstrat(x)
-
+        pi = self.policy_tail(mid)
         v = self.value_tail(mid)
         return pi, v

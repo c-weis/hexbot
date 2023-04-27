@@ -21,7 +21,8 @@ class Hex_Game(gym.Env):
             start_color=RED,
             opponent_policy=None,
             render_mode="human",
-            auto_reset=False):
+            auto_reset=False,
+            optimal_2x2_play=False):
         """
         Initialises Hex Game as a gymnasium environment.
 
@@ -44,6 +45,7 @@ class Hex_Game(gym.Env):
         self.player_color = Hex_Game.PLAYER_COLOR
         self.opponent_color = Hex_Game.OPPONENT_COLOR
         self.auto_reset = auto_reset
+        self.optimal_2x2_play = optimal_2x2_play
 
         if opponent_policy is None:
             self.opponent_policy = self.rand_policy
@@ -88,6 +90,31 @@ class Hex_Game(gym.Env):
             valid_actions[x] = action_probs[x]
 
         return valid_actions
+
+    def optimal_2x2_policy(self):
+        """
+        recall hex tile indexing for 2x2 grid:
+        0 - 2         0 - 1
+        | / |   NOT   | / | 
+        1 - 3         2 - 3
+        """
+        if self.size > 2:
+            raise Exception("Uhh, wrong grid size for optimal 2x2 policy")
+        if len(self.free_tiles) == 4:
+            return 1;
+        elif len(self.free_tiles) == 3:
+            if 1 in self.free_tiles and 3 in self.free_tiles:
+                return 1;
+            else:
+                return 2;
+        elif len(self.free_tiles) == 2:
+            if 3 in self.free_tiles:
+                return 3
+            else:
+                return 2
+        else:
+            for x in self.free_tiles:
+                return x
 
     def rand_policy(self, _):
         """ 
@@ -194,6 +221,11 @@ class Hex_Game(gym.Env):
         _: False
         info:
         """
+
+        # Overwrite action if optimal 2x2 policy activated
+        if self.size==2 and self.optimal_2x2_play==True:
+            action = self.optimal_2x2_policy()
+
         terminated = self.play_tile(action, self.player_color)
 
         new_state = self.state
@@ -348,9 +380,9 @@ class Hex_Game(gym.Env):
 
 
 def main():
-    size = 5
+    size = 2
     start_color = Hex_Game.RED  # AI goes first
-    hg = Hex_Game(size, start_color, auto_reset=False)
+    hg = Hex_Game(size, start_color, auto_reset=False, optimal_2x2_play=True)
     terminated = False
     while not terminated:
         random_action = hg.free_tiles[random.randint(0, len(hg.free_tiles)-1)]
