@@ -1,3 +1,4 @@
+from tkinter import N
 from hex_game import Hex_Game
 from hex_bot import Hex_Bot, Hex_Bot_Brain
 from random import randint
@@ -21,7 +22,8 @@ else:
     print("Using CPU")
     device = torch.device("cpu")
 
-class Hack_Bot(nn.Module):
+
+class Debug_Bot(nn.Module):
     def __init__(self, hex_size):
         super().__init__()
         inputs = hex_size * hex_size * 3  # observation size
@@ -29,10 +31,14 @@ class Hack_Bot(nn.Module):
         self.policy_tail = nn.Sequential(
             nn.Linear(inputs, nr_actions),
         )
-        self.value_tail = nn.Sequential(  # separated for clarity
-            nn.Linear(inputs, 1),
-        )
+        self.policy_tail.requires_grad_(False)
 
+        self.value_tail = nn.Sequential(  # separated for clarity
+            nn.Linear(inputs, 1)
+            #nn.Linear(inputs, 60),
+            # nn.LeakyReLU(),
+            # nn.Linear(60,1)
+        )
 
     def forward(self, x):
         """
@@ -55,20 +61,20 @@ class Bot_Trainer:
         self.game_size = game_size
         self.total_actions = game_size * game_size
         self.workers = 8  # number of concurrent games/threads
-        self.sampling_steps = 32  # number of steps per sampling thread
+        self.sampling_steps = 256  # number of steps per sampling thread
         self.batch_size = self.workers * self.sampling_steps  # nr of samples in a batch
         # number of elements per mini batch (weight update)
         self.mini_batch_size = 8
         # number of minibatches per sample update
         self.mini_batches = self.batch_size // self.mini_batch_size
 
-        self.trainee = bot_brain  # nn.Module to be trained
-        #self.trainee = Hack_Bot(game_size)
+        # self.trainee = bot_brain  # nn.Module to be trained
+        self.trainee = Debug_Bot(game_size)
 
         # number of times samples are collected during a training run
         self.sampling_updates = 100
         # number of episodes in between consecutive sampling
-        self.episodes_per_sampling = 100
+        self.episodes_per_sampling = 10
 
         # Generalized Advantage Estimation  hyperparameters
         self.GAEgamma = 0.99   # discount factor
@@ -234,8 +240,10 @@ class Bot_Trainer:
             # TODO(CW): Compute clipped VF Loss?
             loss_VF = torch.mean((new_value - old_returns)**2)
         else:
-            # evaluate for constant value function new_value = 0
-            loss_VF = torch.mean(old_returns**2)
+            # evaluate for best value function fake_new_value
+            fake_new_value = torch.tensor(
+                [[1], [0], [0], [1], [1], [1], [1]], dtype=torch.float32)
+            loss_VF = torch.mean((fake_new_value - old_returns)**2)
 
         # Compute entropy bonus loss
         loss_S = torch.mean(new_policy.entropy())
@@ -274,7 +282,8 @@ class Bot_Trainer:
 
     def train(self):
         """ Trains the brain. """
-        optimizer = torch.optim.Adam(params=self.trainee.parameters(), lr=0.005)
+        optimizer = torch.optim.Adam(
+            params=self.trainee.parameters(), lr=0.005)
 
         # Metrics
         average_reward = np.zeros(self.sampling_updates)
@@ -301,6 +310,7 @@ class Bot_Trainer:
             self.evaluate_2x2_vf()
 
             total_loss = 0
+            total_fake_loss = 0
             for ep in range(self.episodes_per_sampling):
                 permuted_batch_indices = torch.randperm(self.batch_size)
                 for mini_batch in range(self.mini_batches):
@@ -318,7 +328,13 @@ class Bot_Trainer:
                     loss.backward()
                     optimizer.step()
 
+                    with torch.no_grad():
+                        fake_loss = self.calc_loss(
+                            mini_batch_samples, CLIPeps=1-up/self.sampling_updates, fake_best=True)
+
                     total_loss += loss
+                    total_fake_loss += fake_loss
+            print(f"Total losses: AI {total_loss:.1f} vs. fake {total_fake_loss:.1f}.")
             # for key in gradients:
             #    gradients[key] = gradients[key] / (self.episodes_per_sampling)
             #print(f"Gradients: {gradients}")
