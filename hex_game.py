@@ -49,8 +49,10 @@ class Hex_Game(gym.Env):
 
         if opponent_policy is None:
             self.opponent_policy = self.rand_policy
-        else:
-            opponent_policy
+        elif opponent_policy == "first free":
+            self.opponent_policy = self.first_free_tile_policy
+        elif opponent_policy == "hack":
+            self.opponent_policy = self.hack_policy
 
         self.action_space = spaces.Discrete(self.size * self.size)
         self._action_to_hexagon = [
@@ -117,7 +119,6 @@ class Hex_Game(gym.Env):
             for x in self.free_tiles:
                 return x
 
-    # TODO: reset to random
     def rand_policy(self, _):
         """ 
         The 'random' policy which ignores the state and 
@@ -125,6 +126,22 @@ class Hex_Game(gym.Env):
         """
         rand_free_tile_index = random.randint(0, len(self.free_tiles)-1)
         return self.free_tiles[rand_free_tile_index]
+
+    def first_free_tile_policy(self, _):
+        """
+        The 'first free tile' policy which plays the tile to the 
+        upper-left-most free space.
+        """
+        return self.free_tiles[0]
+
+    def hack_policy(self, _):
+        """
+        The 'hack' policy. Haxxxor l331 
+        """
+        if len(self.free_tiles) > 2:
+            return self.free_tiles[2]
+        return self.rand_policy(_)
+
 
     def neighbours(self, row: int, col: int) -> List[Tuple[int]]:
         """
