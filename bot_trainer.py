@@ -34,10 +34,14 @@ class Debug_Bot(nn.Module):
         self.policy_tail.requires_grad_(False)
 
         self.value_tail = nn.Sequential(  # separated for clarity
-            nn.Linear(inputs, 1)
-            #nn.Linear(inputs, 60),
-            # nn.LeakyReLU(),
-            # nn.Linear(60,1)
+            # nn.Linear(inputs, 1)
+            nn.Linear(inputs, 10),
+            nn.LeakyReLU(),
+            nn.Linear(10, 10),
+            nn.LeakyReLU(),
+            nn.Linear(10, 10),
+            nn.LeakyReLU(),
+            nn.Linear(10, 1)
         )
 
     def forward(self, x):
@@ -60,11 +64,11 @@ class Bot_Trainer:
     def __init__(self, game_size, bot_brain):
         self.game_size = game_size
         self.total_actions = game_size * game_size
-        self.workers = 8  # number of concurrent games/threads
-        self.sampling_steps = 256  # number of steps per sampling thread
+        self.workers = 256  # number of concurrent games/threads
+        self.sampling_steps = 32  # number of steps per sampling thread
         self.batch_size = self.workers * self.sampling_steps  # nr of samples in a batch
         # number of elements per mini batch (weight update)
-        self.mini_batch_size = 8
+        self.mini_batch_size = 64
         # number of minibatches per sample update
         self.mini_batches = self.batch_size // self.mini_batch_size
 
@@ -74,7 +78,7 @@ class Bot_Trainer:
         # number of times samples are collected during a training run
         self.sampling_updates = 100
         # number of episodes in between consecutive sampling
-        self.episodes_per_sampling = 10
+        self.episodes_per_sampling = 50
 
         # Generalized Advantage Estimation  hyperparameters
         self.GAEgamma = 0.99   # discount factor
@@ -88,8 +92,8 @@ class Bot_Trainer:
 
         # TODO (long-term): Instantiate these games in paralellel processes for speed up
         # Games are instantiated (Opponent Policy is currently none)
-        self.start_colors = [Hex_Game.RED if randint(0, 1) == 0 else Hex_Game.BLUE
-                             for _ in range(self.workers)]
+        self.start_colors = [Hex_Game.RED if worker_index % 2 == 0 else Hex_Game.BLUE
+                             for worker_index in range(self.workers)]
         self.worker_games = [Hex_Game(size=self.game_size, start_color=color,
                                       render_mode="nonhuman", auto_reset=True,
                                       optimal_2x2_play=True)  # ADDED
@@ -214,10 +218,12 @@ class Bot_Trainer:
 
     def calc_loss(self, samples, CLIPeps, metrics=None, fake_best=False):
         """ Calculate loss """
+        have_loss = -1.0 in list(samples["rewards"])
+
         advantages = samples["advantages"]
         # Normalise advantages
-        adv_mean, adv_stddev = torch.std_mean(advantages)
-        advantages = (advantages - adv_mean)/adv_stddev
+        # adv_mean, adv_stddev = torch.std_mean(advantages)
+        # advantages = (advantages - adv_mean)/adv_stddev
 
         states = samples["states"]
         actions = samples["actions"]
@@ -240,10 +246,45 @@ class Bot_Trainer:
             # TODO(CW): Compute clipped VF Loss?
             loss_VF = torch.mean((new_value - old_returns)**2)
         else:
+            lookup_states = [
+                [1, 0, 0,   1, 0, 0,   1, 0, 0,   1, 0, 0],
+
+                [0, 0, 1,   1, 0, 0,   1, 0, 0,   1, 0, 0],
+                [1, 0, 0,   1, 0, 0,   0, 0, 1,   1, 0, 0],
+                [1, 0, 0,   0, 0, 1,   1, 0, 0,   1, 0, 0],
+                [1, 0, 0,   1, 0, 0,   1, 0, 0,   0, 0, 1],
+
+                [0, 0, 1,   0, 1, 0,   1, 0, 0,   1, 0, 0],
+                [1, 0, 0,   0, 1, 0,   0, 0, 1,   1, 0, 0],
+                [1, 0, 0,   0, 1, 0,   1, 0, 0,   0, 0, 1],
+
+                [0, 0, 1,   0, 1, 0,   0, 0, 1,   1, 0, 0],
+                [0, 0, 1,   0, 1, 0,   1, 0, 0,   0, 0, 1],
+
+                [0, 0, 1,   0, 1, 0,   0, 0, 1,   1, 0, 0],
+
+                [1, 0, 0,   0, 0, 1,   0, 1, 0,   0, 0, 1],
+
+                [0, 0, 1,   1, 0, 0,   0, 1, 0,   0, 0, 1],
+                [1, 0, 0,   0, 0, 1,   0, 1, 0,   0, 0, 1],
+            ]
+            fake_values = torch.tensor(
+                [[1],
+                 [1], [0], [0], [1],
+                 [1], [1], [1],
+                 [1], [1], [1], [1], [1], [1]], dtype=torch.float32)
             # evaluate for best value function fake_new_value
-            fake_new_value = torch.tensor(
-                [[1], [0], [0], [1], [1], [1], [1]], dtype=torch.float32)
+
+            fake_new_value = torch.zeros(len(states))
+
+            for idx, s in enumerate(list(states)):
+                l_idx = lookup_states.index([round(i) for i in s.numpy()])
+                fake_new_value[idx] = fake_values[l_idx]
+
             loss_VF = torch.mean((fake_new_value - old_returns)**2)
+            true_loss_VF = torch.mean((new_value - old_returns)**2)
+            if true_loss_VF < loss_VF and have_loss:
+                wait = True
 
         # Compute entropy bonus loss
         loss_S = torch.mean(new_policy.entropy())
@@ -282,8 +323,11 @@ class Bot_Trainer:
 
     def train(self):
         """ Trains the brain. """
-        optimizer = torch.optim.Adam(
-            params=self.trainee.parameters(), lr=0.005)
+        # optimizer = torch.optim.Adam(
+        #    params=self.trainee.parameters(), lr=0.001)
+        optimizer = torch.optim.SGD(
+            params=self.trainee.parameters(), lr=0.1, momentum=0.9)
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.95)
 
         # Metrics
         average_reward = np.zeros(self.sampling_updates)
@@ -291,8 +335,9 @@ class Bot_Trainer:
         game_losses = np.zeros(self.sampling_updates, dtype=np.uint)
         win_rate = np.zeros(self.sampling_updates)
 
+        samples = self.sample()
         for up in range(self.sampling_updates):
-            samples = self.sample()
+            #samples = self.sample()
             rewards = samples["rewards"]
             average_reward[up] = torch.mean(rewards)
             game_wins[up] = torch.count_nonzero(torch.gt(rewards, 0))
@@ -312,7 +357,8 @@ class Bot_Trainer:
             total_loss = 0
             total_fake_loss = 0
             for ep in range(self.episodes_per_sampling):
-                permuted_batch_indices = torch.randperm(self.batch_size)
+                #permuted_batch_indices = torch.randperm(self.batch_size)
+                permuted_batch_indices = torch.arange(self.batch_size)
                 for mini_batch in range(self.mini_batches):
                     start = mini_batch * self.mini_batch_size
                     end = start + self.mini_batch_size
@@ -325,16 +371,19 @@ class Bot_Trainer:
                     optimizer.zero_grad()
                     loss = self.calc_loss(
                         mini_batch_samples, CLIPeps=1-up/self.sampling_updates)  # , metrics=gradients)
-                    loss.backward()
-                    optimizer.step()
 
                     with torch.no_grad():
                         fake_loss = self.calc_loss(
                             mini_batch_samples, CLIPeps=1-up/self.sampling_updates, fake_best=True)
 
+                    loss.backward()
+                    optimizer.step()
+
                     total_loss += loss
                     total_fake_loss += fake_loss
-            print(f"Total losses: AI {total_loss:.1f} vs. fake {total_fake_loss:.1f}.")
+                scheduler.step()
+            print(
+                f"Total losses: AI {total_loss:.1f} vs. fake {total_fake_loss:.1f}.")
             # for key in gradients:
             #    gradients[key] = gradients[key] / (self.episodes_per_sampling)
             #print(f"Gradients: {gradients}")
