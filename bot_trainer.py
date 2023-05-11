@@ -57,6 +57,29 @@ class Debug_Bot(nn.Module):
 class Bot_Trainer:
     """ PPO Trainer for hex_game bots. """
 
+    lookup_states = [
+        [1, 0, 0,   1, 0, 0,   1, 0, 0,   1, 0, 0],
+
+        [0, 0, 1,   1, 0, 0,   1, 0, 0,   1, 0, 0],
+        [1, 0, 0,   1, 0, 0,   0, 0, 1,   1, 0, 0],
+        [1, 0, 0,   0, 0, 1,   1, 0, 0,   1, 0, 0],
+        [1, 0, 0,   1, 0, 0,   1, 0, 0,   0, 0, 1],
+
+        [0, 0, 1,   0, 1, 0,   1, 0, 0,   1, 0, 0],
+        [1, 0, 0,   0, 1, 0,   0, 0, 1,   1, 0, 0],
+        [1, 0, 0,   0, 1, 0,   1, 0, 0,   0, 0, 1],
+
+        [0, 0, 1,   0, 1, 0,   0, 0, 1,   1, 0, 0],
+        [0, 0, 1,   0, 1, 0,   1, 0, 0,   0, 0, 1],
+
+        [0, 0, 1,   0, 1, 0,   0, 0, 1,   1, 0, 0],
+
+        [1, 0, 0,   0, 0, 1,   0, 1, 0,   0, 0, 1],
+
+        [0, 0, 1,   1, 0, 0,   0, 1, 0,   0, 0, 1],
+        [1, 0, 0,   0, 0, 1,   0, 1, 0,   0, 0, 1],
+    ]
+
     def __init__(self, game_size, bot_brain):
         self.game_size = game_size
         self.total_actions = game_size * game_size
@@ -74,7 +97,7 @@ class Bot_Trainer:
         # number of times samples are collected during a training run
         self.sampling_updates = 100
         # number of episodes in between consecutive sampling
-        self.episodes_per_sampling = 5
+        self.episodes_per_sampling = 100
 
         # Generalized Advantage Estimation  hyperparameters
         # self.GAEgamma = 0.99   # discount factor
@@ -241,33 +264,17 @@ class Bot_Trainer:
         # get sampled returns - this is what "value" is trying to estimate
         old_returns = samples["values"] + samples["advantages"]
 
+        # fake_old_returns = torch.zeros_like(old_returns)
+        # for idx, s in enumerate(list(states)):
+        #     l_idx = self.lookup_states.index([round(i) for i in s.numpy()])
+        #     fake_old_returns[idx] = randint(0, 1) * 2 - 1 if l_idx == 2 else 1
+
         if not fake_best:
             # Compute value function loss
             # TODO(CW): Compute clipped VF Loss?
             loss_VF = torch.mean((new_value - old_returns)**2)
+            # loss_VF = torch.mean((new_value - fake_old_returns)**2)
         else:
-            lookup_states = [
-                [1, 0, 0,   1, 0, 0,   1, 0, 0,   1, 0, 0],
-
-                [0, 0, 1,   1, 0, 0,   1, 0, 0,   1, 0, 0],
-                [1, 0, 0,   1, 0, 0,   0, 0, 1,   1, 0, 0],
-                [1, 0, 0,   0, 0, 1,   1, 0, 0,   1, 0, 0],
-                [1, 0, 0,   1, 0, 0,   1, 0, 0,   0, 0, 1],
-
-                [0, 0, 1,   0, 1, 0,   1, 0, 0,   1, 0, 0],
-                [1, 0, 0,   0, 1, 0,   0, 0, 1,   1, 0, 0],
-                [1, 0, 0,   0, 1, 0,   1, 0, 0,   0, 0, 1],
-
-                [0, 0, 1,   0, 1, 0,   0, 0, 1,   1, 0, 0],
-                [0, 0, 1,   0, 1, 0,   1, 0, 0,   0, 0, 1],
-
-                [0, 0, 1,   0, 1, 0,   0, 0, 1,   1, 0, 0],
-
-                [1, 0, 0,   0, 0, 1,   0, 1, 0,   0, 0, 1],
-
-                [0, 0, 1,   1, 0, 0,   0, 1, 0,   0, 0, 1],
-                [1, 0, 0,   0, 0, 1,   0, 1, 0,   0, 0, 1],
-            ]
             fake_values = torch.tensor(
                 [[1],
                  [1], [0], [0], [1],
@@ -278,7 +285,7 @@ class Bot_Trainer:
             fake_new_value = torch.zeros(len(states))
 
             for idx, s in enumerate(list(states)):
-                l_idx = lookup_states.index([round(i) for i in s.numpy()])
+                l_idx = self.lookup_states.index([round(i) for i in s.numpy()])
                 fake_new_value[idx] = fake_values[l_idx]
 
             loss_VF = torch.mean((fake_new_value - old_returns)**2)
@@ -344,7 +351,7 @@ class Bot_Trainer:
             game_losses[up] = torch.count_nonzero(torch.lt(rewards, 0))
             win_rate[up] = game_wins[up] / (game_wins[up] + game_losses[up])
             perfect_num = ((-1)*game_losses[up]
-                           + (+1)*(len(list(rewards)) - game_losses[up])) / len(list(rewards)) 
+                           + (+1)*(len(list(rewards)) - game_losses[up])) / len(list(rewards))
             print(f"Sample update {up+1}/{self.sampling_updates}")
             #print(f"Average reward: {average_reward[up]} ")
             #print(f"Wins/Losses: {game_wins[up]}/{game_losses[up]}")
@@ -404,7 +411,10 @@ class Bot_Trainer:
 
         with torch.no_grad():
             _, values = self.trainee(states)
-        print(values)
+            _, all_values = self.trainee(torch.tensor(
+                self.lookup_states, dtype=torch.float32))
+        print(values.T)
+        print(all_values.T)
 
 
 def main():
