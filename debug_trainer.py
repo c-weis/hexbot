@@ -1,14 +1,8 @@
-from tkinter import N
-from hex_game import Hex_Game
-from hex_bot import Hex_Bot, Hex_Bot_Brain
+from torch import nn
 from random import randint
 import torch
-import torch.nn as nn
-from torch.distributions import Categorical
-from typing import Dict, List
 import numpy as np
 import time
-from bot_trainer import Debug_Bot
 
 SERIOUS_COMPUTATION = False
 
@@ -24,74 +18,68 @@ else:
     device = torch.device("cpu")
 
 
+class Debug_Bot(nn.Module):
+    def __init__(self, input_size):
+        super().__init__()
+        self.layer1 = nn.Linear(input_size, 1)
+
+    def forward(self, x):
+        return self.layer1(x)
+
+
 class Two_State_Trainer:
+    # two_states = [
+    #            [1, 0, 0,   1, 0, 0,   0, 0, 1,   1, 0, 0],
+    #            [0, 0, 1,   0, 1, 0,   0, 0, 1,   1, 0, 0]
+    #        ]
+    # two_states = [[1, 0],
+    #               [0, 1]]
+    two_states = torch.tensor([[0],
+                               [1]], dtype=torch.float32)
+    two_returns = torch.tensor([[0],
+                                [1]], dtype=torch.float32)
+    state_size = len(two_states[0])
 
-    two_states = [
-                [1, 0, 0,   1, 0, 0,   0, 0, 1,   1, 0, 0],
-                [0, 0, 1,   0, 1, 0,   0, 0, 1,   1, 0, 0]
-            ]
-    
     def __init__(self):
-        self.sampling_steps = 1024  # number of steps per sampling thread
-        self.trainee = Debug_Bot(2)
-        self.sampling_updates = 50
-        self.episodes_per_update = 512
+        self.datapoints = 512  # number of steps per sampling thread
+        self.trainee = Debug_Bot(self.state_size)
+        self.episodes = 500
 
-    def sample(self):
-        states = np.zeros((self.sampling_steps, 12), dtype=np.uint8)
-        returns = np.zeros((self.sampling_steps), dtype=np.float32)
-        with torch.no_grad():
-            step = 0
-            while step < self.sampling_steps:
-                draw = randint(0,1)
-                start_step = step
-                if draw == 0:
-                    states[step] = self.two_states[0]
-                    returns[step] = -1
-                    step += 1
-                if draw == 1:
-                    states[step] = self.two_states[0]
-                    returns[step] = 1
-                    if step + 1 < self.sampling_steps:
-                        states[step+1] = self.two_states[1]
-                        returns[step+1] = 1
-                    step += 2
+    def create_data(self):
+        X = torch.zeros((self.datapoints, self.state_size),
+                        dtype=torch.float32)
+        y = torch.zeros((self.datapoints, 1), dtype=torch.float32)
 
-        samples_dict = {
-            "states": states,
-            "returns": returns
-        }
+        for step in range(self.datapoints):
+            draw = randint(0, 1)
+            X[step] = self.two_states[draw]
+            y[step] = self.two_returns[draw]
 
-        for key, val in samples_dict.items():
-            shape = val.shape
-            samples_dict[key] = torch.tensor(val.reshape(
-                shape[0], *shape[1:]), dtype=torch.float32, device=device)
-
-        return samples_dict 
-
-    def _calc_loss(self, samples):
-        new_policy_, new_value = self.trainee(samples["states"])
-        loss_VF = torch.mean((new_value - samples["returns"])**2)
-        return loss_VF        
+        return X, y
 
     def train(self):
-        optimizer = torch.optim.SGD(params=self.trainee.parameters(), lr=0.01)
-        #scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.9)
-        samples = self.sample()
-        for up in range(self.sampling_updates):
-            total_loss = 0
-            for ep in range(self.episodes_per_update):
-                    optimizer.zero_grad()
-                    loss = self._calc_loss(samples)
-                    loss.backward()
-                    optimizer.step()
-                    total_loss += loss
-            print(
-                f"Total losses: AI {total_loss:.1f}")
-            for state in self.two_states:
-                with torch.no_grad():
-                    _, v = self.trainee(torch.tensor(state, dtype=torch.float32))
-                    print(v)
+        optimizer = torch.optim.SGD(params=self.trainee.parameters(), lr=0.1)
+
+        X, target_y = self.create_data()
+        X_prime = torch.randint(
+            2, (self.datapoints, self.state_size), dtype=torch.float32)
+        target_y_prime = X_prime
+
+        loss_fn = nn.MSELoss()
+        for ep in range(self.episodes):
+            optimizer.zero_grad()
+            y = self.trainee(X)
+            loss = loss_fn(y, target_y)
+            loss.backward()
+            optimizer.step()
+            if (ep+1) % 100 == 0:
+                for idx, state in enumerate(self.two_states):
+                    with torch.no_grad():
+                        v = self.trainee(torch.tensor(
+                            state, dtype=torch.float32))
+                        print(
+                            f"Episode {ep+1}/{self.episodes}, State {idx}: {v.item():.3f}")
+
 
 def main():
     """ write test code here """
