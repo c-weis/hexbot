@@ -24,6 +24,7 @@ else:
 
 
 class Debug_Bot(nn.Module):
+
     def __init__(self, hex_size):
         super().__init__()
         inputs = hex_size * hex_size * 3  # observation size
@@ -72,7 +73,7 @@ class Bot_Trainer:
         self.trainee = Debug_Bot(game_size)
 
         # number of times samples are collected during a training run
-        self.sampling_updates = 100
+        self.sampling_updates = 3
         # number of episodes in between consecutive sampling
         self.episodes_per_sampling = 5
 
@@ -374,16 +375,16 @@ class Bot_Trainer:
                     optimizer.zero_grad()
                     loss = self.calc_loss(
                         mini_batch_samples, CLIPeps=1-up/self.sampling_updates)  # , metrics=gradients)
-#
-#                    with torch.no_grad():
-#                        fake_loss = self.calc_loss(
-#                            mini_batch_samples, CLIPeps=1-up/self.sampling_updates, fake_best=True)
+
+                    with torch.no_grad():
+                       fake_loss = self.calc_loss(
+                           mini_batch_samples, CLIPeps=1-up/self.sampling_updates, fake_best=True)
 
                     loss.backward()
                     optimizer.step()
 
                     total_loss += loss
-#                    total_fake_loss += fake_loss
+                    total_fake_loss += fake_loss
                 # scheduler.step()
             print(
                 f"Total losses: AI {total_loss:.1f} vs. fake {total_fake_loss:.1f}.")
