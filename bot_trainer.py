@@ -1,7 +1,8 @@
 from tkinter import N
 from hex_game import Hex_Game
-from hex_bot import Hex_Bot, Hex_Bot_Brain
+from hex_bot import Hex_Bot_Brain
 from random import randint
+import random
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical
@@ -10,20 +11,28 @@ import numpy as np
 import time
 
 device = torch.device("cpu")
+torch.manual_seed(42)
+random.seed(43)
 
 
 class Debug_Bot(nn.Module):
 
     def __init__(self, hex_size, device=None):
         super().__init__()
-        inputs = hex_size * hex_size * 3  # observation size
+        inputs = hex_size * hex_size * 2  # observation size
         nr_actions = hex_size * hex_size  # action size
         self.policy_tail = nn.Sequential(
-            nn.Linear(inputs, nr_actions),
+            nn.Linear(inputs, 80),
+            nn.Tanh(),
+            nn.Linear(80, 40),
+            nn.Tanh(),
+            nn.Linear(40, nr_actions)
         )
 
-        self.value_tail = nn.Sequential(  # separated for clarity
-            nn.Linear(inputs, 20),
+        self.value_tail = nn.Sequential(  # separated for clarit
+            nn.Linear(inputs, 40),
+            nn.Tanh(),
+            nn.Linear(40, 20),
             nn.Tanh(),
             nn.Linear(20, 1)
         )
@@ -45,37 +54,14 @@ class Debug_Bot(nn.Module):
 class Bot_Trainer:
     """ PPO Trainer for hex_game bots. """
 
-    lookup_states = [
-        [1, 0, 0,   1, 0, 0,   1, 0, 0,   1, 0, 0],
-
-        [0, 0, 1,   1, 0, 0,   1, 0, 0,   1, 0, 0],
-        [1, 0, 0,   1, 0, 0,   0, 0, 1,   1, 0, 0],
-        [1, 0, 0,   0, 0, 1,   1, 0, 0,   1, 0, 0],
-        [1, 0, 0,   1, 0, 0,   1, 0, 0,   0, 0, 1],
-
-        [0, 0, 1,   0, 1, 0,   1, 0, 0,   1, 0, 0],
-        [1, 0, 0,   0, 1, 0,   0, 0, 1,   1, 0, 0],
-        [1, 0, 0,   0, 1, 0,   1, 0, 0,   0, 0, 1],
-
-        [0, 0, 1,   0, 1, 0,   0, 0, 1,   1, 0, 0],
-        [0, 0, 1,   0, 1, 0,   1, 0, 0,   0, 0, 1],
-
-        [0, 0, 1,   0, 1, 0,   0, 0, 1,   1, 0, 0],
-
-        [1, 0, 0,   0, 0, 1,   0, 1, 0,   0, 0, 1],
-
-        [0, 0, 1,   1, 0, 0,   0, 1, 0,   0, 0, 1],
-        [1, 0, 0,   0, 0, 1,   0, 1, 0,   0, 0, 1],
-    ]
-
     def __init__(self, game_size, bot_brain):
         self.game_size = game_size
         self.total_actions = game_size * game_size
-        self.workers = 64  # number of concurrent games/threads
-        self.sampling_steps = 256  # number of steps per sampling thread
+        self.workers = 8  # number of concurrent games/threads
+        self.sampling_steps = 512  # number of steps per sampling thread
         self.batch_size = self.workers * self.sampling_steps  # nr of samples in a batch
         # number of elements per mini batch (weight update)
-        self.mini_batch_size = 64
+        self.mini_batch_size = 16
         # number of minibatches per sample update
         self.mini_batches = self.batch_size // self.mini_batch_size
 
@@ -83,21 +69,21 @@ class Bot_Trainer:
         self.trainee = Debug_Bot(game_size)
 
         # number of times samples are collected during a training run
-        self.sampling_updates = 10
+        self.sampling_updates = 200
         # number of episodes in between consecutive sampling
-        self.episodes_per_sampling = 100
+        self.episodes_per_sampling = 10
 
         # Generalized Advantage Estimation  hyperparameters
-        # self.GAEgamma = 0.99   # discount factor
-        # self.GAElambda = 0.95  # compromise between
+        self.GAEgamma = 0.99   # discount factor
+        self.GAElambda = 0.95  # compromise between
         # low variance, high bias (`GAElambda`=0)
         # low bias, high variance (`GAElambda`=1)
-        self.GAEgamma = 1
-        self.GAElambda = 1
+        # self.GAEgamma = 1
+        # self.GAElambda = 1
 
         # Loss hyperparameters
-        self.loss_c1 = 0.5
-        self.loss_c2 = 0.01
+        self.loss_c1 = 0.7
+        self.loss_c2 = 0.05
 
         # TODO (long-term): Instantiate these games in paralellel processes for speed up
         # Games are instantiated (Opponent Policy is currently none)
@@ -116,7 +102,7 @@ class Bot_Trainer:
         states, values, actions, log_prob_actions, rewards, advantages
         """
         states = np.zeros((self.workers, self.sampling_steps,
-                           self.game_size * self.game_size * 3), dtype=np.uint8)
+                           self.game_size * self.game_size * 2), dtype=np.uint8)
         values = np.zeros((self.workers, self.sampling_steps),
                           dtype=np.float32)
         actions = np.zeros((self.workers, self.sampling_steps),
@@ -281,9 +267,9 @@ class Bot_Trainer:
             metrics["entropy"] += s_grad
 
         # Combine
-        # loss = -(loss_CLIP - self.loss_c1 * loss_VF + self.loss_c2 * loss_S)
-        return -loss_CLIP + self.loss_c1 * loss_VF
-        # return loss
+        loss = -(loss_CLIP - self.loss_c1 * loss_VF + self.loss_c2 * loss_S)
+        # loss = -loss_CLIP + self.loss_c1 * loss_VF
+        return loss
 
     def train(self):
         """ Trains the brain. """
@@ -306,12 +292,11 @@ class Bot_Trainer:
             win_rate[up] = game_wins[up] / (game_wins[up] + game_losses[up])
             print(f"Sample update {up+1}/{self.sampling_updates}")
             print(f"Win rate: {win_rate[up]*100:0,.1f}%")
-            # gradients = {
-            #    "clip": 0,
-            #    "value_function": 0,
-            #    "entropy": 0
-            # }
-            self.evaluate_2x2_vf()
+            gradients = {
+               "clip": 0,
+               "value_function": 0,
+               "entropy": 0
+            }
 
             total_loss = 0
             for ep in range(self.episodes_per_sampling):
@@ -327,7 +312,7 @@ class Bot_Trainer:
 
                     optimizer.zero_grad()
                     loss = self.calc_loss(
-                        mini_batch_samples, CLIPeps=1-up/self.sampling_updates)  # , metrics=gradients)
+                        mini_batch_samples, CLIPeps=1-up/self.sampling_updates, metrics=gradients)
 
                     loss.backward()
                     optimizer.step()
@@ -335,15 +320,9 @@ class Bot_Trainer:
                     total_loss += loss
                 # scheduler.step()
             print(f"Total losses: AI {total_loss:.1f}.")
-            # for key in gradients:
-            #    gradients[key] = gradients[key] / (self.episodes_per_sampling)
-            #print(f"Gradients: {gradients}")
-
-    def evaluate_2x2_vf(self):
-        with torch.no_grad():
-            _, values = self.trainee(torch.tensor(
-                self.lookup_states, dtype=torch.float32))
-        print(values.T)
+            for key in gradients:
+               gradients[key] = gradients[key] / (self.episodes_per_sampling)
+            print(f"Gradients: {gradients}")
 
 
 def main():
@@ -360,9 +339,9 @@ def main():
         print("Using CPU")
         device = torch.device("cpu")
 
-    hex_size = 2
+    hex_size = 8
     bot_brain = Hex_Bot_Brain(
-        hex_size=hex_size, inner_neurons_1=18, inner_neurons_2=18).to(device)
+        hex_size=hex_size, inner_neurons_1=80, inner_neurons_2=40).to(device)
     trainer = Bot_Trainer(game_size=hex_size, bot_brain=bot_brain)
     # test_sample = trainer.sample()
     # print(test_sample)

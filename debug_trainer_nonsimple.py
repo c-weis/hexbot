@@ -39,7 +39,7 @@ class Two_State_Trainer:
 
     def sample(self):
         states = np.zeros((self.sampling_steps, 12), dtype=np.uint8)
-        returns = np.zeros((self.sampling_steps, 1), dtype=np.float32)
+        returns = np.zeros((self.sampling_steps), dtype=np.float32)
         with torch.no_grad():
             step = 0
             while step < self.sampling_steps:

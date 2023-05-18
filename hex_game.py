@@ -73,14 +73,18 @@ class Hex_Game(gym.Env):
         """
         Getter function returning the flattened state of the game.
         """
-        state = np.zeros((self.size, self.size, 3), dtype=np.float32)
+        state = np.zeros((self.size, self.size, 2), dtype=np.float32)
 
         for x in range(self.size):
             for y in range(self.size):
-                # TODO(c): figure out whether x and y need to be swapped
-                state[x,y,self.state[y,x]] = 1
+                if self.state[x,y]==0:
+                    continue
+                else:
+                    state[x,y,self.state[y,x]-1] = 1
+                # For 3-Hot encoding use this instead:
+                # state[x,y,self.state[y,x]] = 1        
 
-        return state.reshape(self.size*self.size*3)
+        return state.reshape(self.size * self.size * 2)
 
     def action_mask(self, action_probs: np.ndarray):
         """
