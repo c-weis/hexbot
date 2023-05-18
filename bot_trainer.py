@@ -10,9 +10,6 @@ from matplotlib import pyplot as plt
 import time
 
 device = torch.device("cpu")
-torch.manual_seed(42)
-random.seed(43)
-
 
 class Debug_Bot(nn.Module):
 
@@ -57,7 +54,7 @@ class Bot_Trainer:
         self.game_size = game_size
         self.total_actions = game_size * game_size
         self.workers = 8  # number of concurrent games/threads
-        self.sampling_steps = 256  # number of steps per sampling thread
+        self.sampling_steps = 128  # number of steps per sampling thread
         self.batch_size = self.workers * self.sampling_steps  # nr of samples in a batch
         # number of elements per mini batch (weight update)
         self.mini_batch_size = 16
@@ -68,21 +65,19 @@ class Bot_Trainer:
         # self.trainee = Debug_Bot(game_size)
 
         # number of times samples are collected during a training run
-        self.sampling_updates = 2000
+        self.sampling_updates = 100
         # number of episodes in between consecutive sampling
         self.episodes_per_sampling = 5
 
         # Generalized Advantage Estimation  hyperparameters
         self.GAEgamma = 0.99   # discount factor
         self.GAElambda = 0.95  # compromise between
-        self.GAEgamma = 0.99   # discount factor
-        self.GAElambda = 0.95  # compromise between
         # low variance, high bias (`GAElambda`=0)
         # low bias, high variance (`GAElambda`=1)
 
         # Loss hyperparameters
-        self.loss_c1 = 0.7
-        self.loss_c2 = 0.05
+        self.loss_c1 = 0.5
+        self.loss_c2 = 0.01
 
         # TODO (long-term): Instantiate these games in paralellel processes for speed up
         # Games are instantiated (Opponent Policy is currently none)
@@ -307,9 +302,6 @@ class Bot_Trainer:
             for key in gradients_records.keys():
                 gradients[key] = 0
 
-            if self.game_size == 2:
-                self.evaluate_2x2_vf()
-
             for ep in range(self.episodes_per_sampling):
                 permuted_batch_indices = torch.randperm(self.batch_size)
                 for mini_batch in range(self.mini_batches):
@@ -329,10 +321,9 @@ class Bot_Trainer:
                     optimizer.step()
 
                 # scheduler.step()
-            print(f"Total losses: AI {total_loss:.1f}.")
             for key in gradients:
                 gradients[key] = gradients[key].item() / \
-                    (self.episodes_per_sampling)
+                    self.episodes_per_sampling
                 gradients_records[key].append(gradients[key])
             print(f"Gradients: {gradients}")
 
@@ -342,7 +333,7 @@ class Bot_Trainer:
         if plot_stats:
             self.plot_stats(gradients_records, figures)
             plt.show()
-    
+
     def plot_stats(self, records, figures):
         for key in records:
             fig = figures[key]
