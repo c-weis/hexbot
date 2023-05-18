@@ -19,7 +19,9 @@ class Debug_Bot(nn.Module):
         inputs = hex_size * hex_size * 3  # observation size
         nr_actions = hex_size * hex_size  # action size
         self.policy_tail = nn.Sequential(
-            nn.Linear(inputs, nr_actions),
+            nn.Linear(inputs, 30),
+            nn.Tanh(),
+            nn.Linear(30, nr_actions)
         )
 
         self.value_tail = nn.Sequential(  # separated for clarity
@@ -45,7 +47,7 @@ class Debug_Bot(nn.Module):
 class Bot_Trainer:
     """ PPO Trainer for hex_game bots. """
 
-    lookup_states = [
+    lookup_states_2x2 = [
         [1, 0, 0,   1, 0, 0,   1, 0, 0,   1, 0, 0],
 
         [0, 0, 1,   1, 0, 0,   1, 0, 0,   1, 0, 0],
@@ -281,9 +283,7 @@ class Bot_Trainer:
             metrics["entropy"] += s_grad
 
         # Combine
-        # loss = -(loss_CLIP - self.loss_c1 * loss_VF + self.loss_c2 * loss_S)
-        return -loss_CLIP + self.loss_c1 * loss_VF
-        # return loss
+        return -loss_CLIP + self.loss_c1 * loss_VF - self.loss_c2 * loss_S
 
     def train(self):
         """ Trains the brain. """
@@ -306,14 +306,14 @@ class Bot_Trainer:
             win_rate[up] = game_wins[up] / (game_wins[up] + game_losses[up])
             print(f"Sample update {up+1}/{self.sampling_updates}")
             print(f"Win rate: {win_rate[up]*100:0,.1f}%")
-            # gradients = {
-            #    "clip": 0,
-            #    "value_function": 0,
-            #    "entropy": 0
-            # }
-            self.evaluate_2x2_vf()
+            gradients = {
+               "clip": 0,
+               "value_function": 0,
+               "entropy": 0
+            }
+            if self.game_size == 2:
+                self.evaluate_2x2_vf()
 
-            total_loss = 0
             for ep in range(self.episodes_per_sampling):
                 permuted_batch_indices = torch.randperm(self.batch_size)
                 for mini_batch in range(self.mini_batches):
@@ -327,22 +327,20 @@ class Bot_Trainer:
 
                     optimizer.zero_grad()
                     loss = self.calc_loss(
-                        mini_batch_samples, CLIPeps=1-up/self.sampling_updates)  # , metrics=gradients)
+                        mini_batch_samples, CLIPeps=1-up/self.sampling_updates, metrics=gradients)
 
                     loss.backward()
                     optimizer.step()
 
-                    total_loss += loss
                 # scheduler.step()
-            print(f"Total losses: AI {total_loss:.1f}.")
-            # for key in gradients:
-            #    gradients[key] = gradients[key] / (self.episodes_per_sampling)
-            #print(f"Gradients: {gradients}")
+            for key in gradients:
+               gradients[key] = gradients[key] / (self.episodes_per_sampling)
+            print(f"Gradients: {gradients}")
 
     def evaluate_2x2_vf(self):
         with torch.no_grad():
             _, values = self.trainee(torch.tensor(
-                self.lookup_states, dtype=torch.float32))
+                self.lookup_states_2x2, dtype=torch.float32))
         print(values.T)
 
 
@@ -360,7 +358,7 @@ def main():
         print("Using CPU")
         device = torch.device("cpu")
 
-    hex_size = 2
+    hex_size = 4
     bot_brain = Hex_Bot_Brain(
         hex_size=hex_size, inner_neurons_1=18, inner_neurons_2=18).to(device)
     trainer = Bot_Trainer(game_size=hex_size, bot_brain=bot_brain)
