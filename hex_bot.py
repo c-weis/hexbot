@@ -1,20 +1,4 @@
-from logging import exception
-from pydoc import classname
-import torch
 import torch.nn as nn
-
-
-class Hex_Bot:
-    def __init__(self, bot_brain=None):
-        if bot_brain is None:
-            self.brain = Hex_Bot_Brain()
-        else:
-            self.brain = bot_brain
-
-    def choose_action(self, state):
-        action = 0  # TODO(c): use your brain
-        return action
-
 
 class Hex_Bot_Brain(nn.Module):
     """

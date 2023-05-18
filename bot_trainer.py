@@ -1,12 +1,12 @@
-from tkinter import N
+import random
 from hex_game import Hex_Game
-from hex_bot import Hex_Bot, Hex_Bot_Brain
-from random import randint
+from hex_bot import Hex_Bot_Brain
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical
-from typing import Dict, List
+from typing import Dict
 import numpy as np
+from matplotlib import pyplot as plt
 import time
 
 device = torch.device("cpu")
@@ -73,7 +73,7 @@ class Bot_Trainer:
     def __init__(self, game_size, bot_brain):
         self.game_size = game_size
         self.total_actions = game_size * game_size
-        self.workers = 64  # number of concurrent games/threads
+        self.workers = 8  # number of concurrent games/threads
         self.sampling_steps = 256  # number of steps per sampling thread
         self.batch_size = self.workers * self.sampling_steps  # nr of samples in a batch
         # number of elements per mini batch (weight update)
@@ -81,21 +81,19 @@ class Bot_Trainer:
         # number of minibatches per sample update
         self.mini_batches = self.batch_size // self.mini_batch_size
 
-        # self.trainee = bot_brain  # nn.Module to be trained
-        self.trainee = Debug_Bot(game_size)
+        self.trainee = bot_brain  # nn.Module to be trained
+        # self.trainee = Debug_Bot(game_size)
 
         # number of times samples are collected during a training run
-        self.sampling_updates = 10
+        self.sampling_updates = 100
         # number of episodes in between consecutive sampling
-        self.episodes_per_sampling = 100
+        self.episodes_per_sampling = 5
 
         # Generalized Advantage Estimation  hyperparameters
-        # self.GAEgamma = 0.99   # discount factor
-        # self.GAElambda = 0.95  # compromise between
+        self.GAEgamma = 0.99   # discount factor
+        self.GAElambda = 0.95  # compromise between
         # low variance, high bias (`GAElambda`=0)
         # low bias, high variance (`GAElambda`=1)
-        self.GAEgamma = 1
-        self.GAElambda = 1
 
         # Loss hyperparameters
         self.loss_c1 = 0.5
@@ -152,6 +150,8 @@ class Bot_Trainer:
                     masked_pi_prob = Categorical(logits=masked_pi)
                     # Sample an action from the valid ones
                     action = masked_pi_prob.sample()
+                    while masked_pi_prob.probs[action] == 0:
+                        action = masked_pi_prob.sample()
 
                     # Record values, actions, and action probs
                     values[i, t] = v.cpu().numpy()
@@ -258,8 +258,6 @@ class Bot_Trainer:
         loss_S = torch.mean(new_policy.entropy())
 
         if metrics is not None:
-            nr_params = sum(param.numel()
-                            for param in self.trainee.parameters() if param.requires_grad)
             self.trainee.zero_grad()
             loss_CLIP.backward(retain_graph=True)
             clip_grad = 0
@@ -285,17 +283,29 @@ class Bot_Trainer:
         # Combine
         return -loss_CLIP + self.loss_c1 * loss_VF - self.loss_c2 * loss_S
 
-    def train(self):
+    def train(self, plot_stats=False):
         """ Trains the brain. """
         optimizer = torch.optim.SGD(
             params=self.trainee.parameters(), lr=0.05)
-        #scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.9)
+        # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.9)
 
         # Metrics
         average_reward = np.zeros(self.sampling_updates)
         game_wins = np.zeros(self.sampling_updates, dtype=np.uint)
         game_losses = np.zeros(self.sampling_updates, dtype=np.uint)
         win_rate = np.zeros(self.sampling_updates)
+        gradients_records = {
+            "clip": [],
+            "value_function": [],
+            "entropy": [],
+        }
+
+        # Setup interactive plotting
+        if plot_stats:
+            plt.ion()
+            figures = {}
+            for key in gradients_records:
+                figures[key] = plt.figure()
 
         for up in range(self.sampling_updates):
             samples = self.sample()
@@ -306,11 +316,10 @@ class Bot_Trainer:
             win_rate[up] = game_wins[up] / (game_wins[up] + game_losses[up])
             print(f"Sample update {up+1}/{self.sampling_updates}")
             print(f"Win rate: {win_rate[up]*100:0,.1f}%")
-            gradients = {
-               "clip": 0,
-               "value_function": 0,
-               "entropy": 0
-            }
+            gradients = {}
+            for key in gradients_records.keys():
+                gradients[key] = 0
+
             if self.game_size == 2:
                 self.evaluate_2x2_vf()
 
@@ -334,8 +343,28 @@ class Bot_Trainer:
 
                 # scheduler.step()
             for key in gradients:
-               gradients[key] = gradients[key] / (self.episodes_per_sampling)
+                gradients[key] = gradients[key].item() / \
+                    (self.episodes_per_sampling)
+                gradients_records[key].append(gradients[key])
             print(f"Gradients: {gradients}")
+
+            if plot_stats:
+                self.plot_stats(gradients_records, figures)
+
+        if plot_stats:
+            self.plot_stats(gradients_records, figures)
+            plt.show()
+    
+    def plot_stats(self, records, figures):
+        for key in records:
+            fig = figures[key]
+            plt.figure(fig)
+            plt.clf()
+            plt.plot(records[key])
+            plt.title(key)
+            fig.canvas.draw()
+            fig.canvas.flush_events()
+            time.sleep(0.05)
 
     def evaluate_2x2_vf(self):
         with torch.no_grad():
@@ -358,13 +387,18 @@ def main():
         print("Using CPU")
         device = torch.device("cpu")
 
-    hex_size = 4
+    torch.manual_seed(42)
+    random.seed(43)
+
+    hex_size = 8
     bot_brain = Hex_Bot_Brain(
-        hex_size=hex_size, inner_neurons_1=18, inner_neurons_2=18).to(device)
+        hex_size=hex_size, inner_neurons_1=30, inner_neurons_2=30).to(device)
+    # bot_brain = Debug_Bot(hex_size)
+
     trainer = Bot_Trainer(game_size=hex_size, bot_brain=bot_brain)
     # test_sample = trainer.sample()
     # print(test_sample)
-    trainer.train()
+    trainer.train(plot_stats=True)
 
 
 if __name__ == "__main__":

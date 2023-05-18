@@ -1,4 +1,3 @@
-import torch
 import gymnasium as gym
 from gymnasium import spaces
 from typing import List, Optional, Tuple, Set
@@ -205,7 +204,9 @@ class Hex_Game(gym.Env):
         for the given color.
         """
         row, column = self._action_to_hexagon[action]
+
         self.free_tiles.remove(action)
+
         self.state[column, row] = color
 
         border1, border2 = self.borders_reached_from_tile(
