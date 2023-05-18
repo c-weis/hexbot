@@ -10,22 +10,28 @@ from matplotlib import pyplot as plt
 import time
 
 device = torch.device("cpu")
+torch.manual_seed(42)
+random.seed(43)
 
 
 class Debug_Bot(nn.Module):
 
     def __init__(self, hex_size, device=None):
         super().__init__()
-        inputs = hex_size * hex_size * 3  # observation size
+        inputs = hex_size * hex_size * 2  # observation size
         nr_actions = hex_size * hex_size  # action size
         self.policy_tail = nn.Sequential(
-            nn.Linear(inputs, 30),
+            nn.Linear(inputs, 80),
             nn.Tanh(),
-            nn.Linear(30, nr_actions)
+            nn.Linear(80, 40),
+            nn.Tanh(),
+            nn.Linear(40, nr_actions)
         )
 
-        self.value_tail = nn.Sequential(  # separated for clarity
-            nn.Linear(inputs, 20),
+        self.value_tail = nn.Sequential(  # separated for clarit
+            nn.Linear(inputs, 40),
+            nn.Tanh(),
+            nn.Linear(40, 20),
             nn.Tanh(),
             nn.Linear(20, 1)
         )
@@ -47,29 +53,6 @@ class Debug_Bot(nn.Module):
 class Bot_Trainer:
     """ PPO Trainer for hex_game bots. """
 
-    lookup_states_2x2 = [
-        [1, 0, 0,   1, 0, 0,   1, 0, 0,   1, 0, 0],
-
-        [0, 0, 1,   1, 0, 0,   1, 0, 0,   1, 0, 0],
-        [1, 0, 0,   1, 0, 0,   0, 0, 1,   1, 0, 0],
-        [1, 0, 0,   0, 0, 1,   1, 0, 0,   1, 0, 0],
-        [1, 0, 0,   1, 0, 0,   1, 0, 0,   0, 0, 1],
-
-        [0, 0, 1,   0, 1, 0,   1, 0, 0,   1, 0, 0],
-        [1, 0, 0,   0, 1, 0,   0, 0, 1,   1, 0, 0],
-        [1, 0, 0,   0, 1, 0,   1, 0, 0,   0, 0, 1],
-
-        [0, 0, 1,   0, 1, 0,   0, 0, 1,   1, 0, 0],
-        [0, 0, 1,   0, 1, 0,   1, 0, 0,   0, 0, 1],
-
-        [0, 0, 1,   0, 1, 0,   0, 0, 1,   1, 0, 0],
-
-        [1, 0, 0,   0, 0, 1,   0, 1, 0,   0, 0, 1],
-
-        [0, 0, 1,   1, 0, 0,   0, 1, 0,   0, 0, 1],
-        [1, 0, 0,   0, 0, 1,   0, 1, 0,   0, 0, 1],
-    ]
-
     def __init__(self, game_size, bot_brain):
         self.game_size = game_size
         self.total_actions = game_size * game_size
@@ -77,7 +60,7 @@ class Bot_Trainer:
         self.sampling_steps = 256  # number of steps per sampling thread
         self.batch_size = self.workers * self.sampling_steps  # nr of samples in a batch
         # number of elements per mini batch (weight update)
-        self.mini_batch_size = 64
+        self.mini_batch_size = 16
         # number of minibatches per sample update
         self.mini_batches = self.batch_size // self.mini_batch_size
 
@@ -85,19 +68,21 @@ class Bot_Trainer:
         # self.trainee = Debug_Bot(game_size)
 
         # number of times samples are collected during a training run
-        self.sampling_updates = 100
+        self.sampling_updates = 2000
         # number of episodes in between consecutive sampling
         self.episodes_per_sampling = 5
 
         # Generalized Advantage Estimation  hyperparameters
         self.GAEgamma = 0.99   # discount factor
         self.GAElambda = 0.95  # compromise between
+        self.GAEgamma = 0.99   # discount factor
+        self.GAElambda = 0.95  # compromise between
         # low variance, high bias (`GAElambda`=0)
         # low bias, high variance (`GAElambda`=1)
 
         # Loss hyperparameters
-        self.loss_c1 = 0.5
-        self.loss_c2 = 0.01
+        self.loss_c1 = 0.7
+        self.loss_c2 = 0.05
 
         # TODO (long-term): Instantiate these games in paralellel processes for speed up
         # Games are instantiated (Opponent Policy is currently none)
@@ -116,7 +101,7 @@ class Bot_Trainer:
         states, values, actions, log_prob_actions, rewards, advantages
         """
         states = np.zeros((self.workers, self.sampling_steps,
-                           self.game_size * self.game_size * 3), dtype=np.uint8)
+                           self.game_size * self.game_size * 2), dtype=np.uint8)
         values = np.zeros((self.workers, self.sampling_steps),
                           dtype=np.float32)
         actions = np.zeros((self.workers, self.sampling_steps),
@@ -281,7 +266,9 @@ class Bot_Trainer:
             metrics["entropy"] += s_grad
 
         # Combine
-        return -loss_CLIP + self.loss_c1 * loss_VF - self.loss_c2 * loss_S
+        loss = -(loss_CLIP - self.loss_c1 * loss_VF + self.loss_c2 * loss_S)
+        # loss = -loss_CLIP + self.loss_c1 * loss_VF
+        return loss
 
     def train(self, plot_stats=False):
         """ Trains the brain. """
@@ -342,6 +329,7 @@ class Bot_Trainer:
                     optimizer.step()
 
                 # scheduler.step()
+            print(f"Total losses: AI {total_loss:.1f}.")
             for key in gradients:
                 gradients[key] = gradients[key].item() / \
                     (self.episodes_per_sampling)
@@ -365,12 +353,6 @@ class Bot_Trainer:
             fig.canvas.draw()
             fig.canvas.flush_events()
             time.sleep(0.05)
-
-    def evaluate_2x2_vf(self):
-        with torch.no_grad():
-            _, values = self.trainee(torch.tensor(
-                self.lookup_states_2x2, dtype=torch.float32))
-        print(values.T)
 
 
 def main():

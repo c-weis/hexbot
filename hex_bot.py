@@ -21,7 +21,7 @@ class Hex_Bot_Brain(nn.Module):
         inner_neurons_2: width of second hidden layer
         """
         super().__init__()
-        inputs = hex_size * hex_size * 3  # observation size
+        inputs = hex_size * hex_size * 2  # observation size
         nr_actions = hex_size * hex_size  # action size
         self.common_head = nn.Sequential(
             nn.Linear(inputs, inner_neurons_1),
