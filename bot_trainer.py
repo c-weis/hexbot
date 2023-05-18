@@ -298,7 +298,6 @@ class Bot_Trainer:
                "entropy": 0
             }
 
-            total_loss = 0
             for ep in range(self.episodes_per_sampling):
                 permuted_batch_indices = torch.randperm(self.batch_size)
                 for mini_batch in range(self.mini_batches):
@@ -317,7 +316,6 @@ class Bot_Trainer:
                     loss.backward()
                     optimizer.step()
 
-                    total_loss += loss
                 # scheduler.step()
             print(f"Total losses: AI {total_loss:.1f}.")
             for key in gradients:
