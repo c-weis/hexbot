@@ -4,16 +4,18 @@ from hex_bot import Hex_Bot_Brain
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical
-from typing import Dict
+from typing import Dict, Optional
 import numpy as np
 from matplotlib import pyplot as plt
 import time
+import json
 
 device = torch.device("cpu")
 
+
 class Debug_Bot(nn.Module):
 
-    def __init__(self, hex_size, device=None):
+    def __init__(self, hex_size: int, device: Optional[torch.device] = None):
         super().__init__()
         inputs = hex_size * hex_size * 2  # observation size
         nr_actions = hex_size * hex_size  # action size
@@ -33,7 +35,7 @@ class Debug_Bot(nn.Module):
             nn.Linear(20, 1)
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
         """
         Take the game state and return (policy, value).
 
@@ -50,7 +52,7 @@ class Debug_Bot(nn.Module):
 class Bot_Trainer:
     """ PPO Trainer for hex_game bots. """
 
-    def __init__(self, game_size, bot_brain):
+    def __init__(self, game_size: int, bot_brain: nn.Module):
         self.game_size = game_size
         self.total_actions = game_size * game_size
         self.workers = 8  # number of concurrent games/threads
@@ -170,14 +172,14 @@ class Bot_Trainer:
 
         return samples_dict
 
-    def get_numpy_action_masks(self):
+    def get_numpy_action_masks(self) -> torch.Tensor:
         action_masks = np.ones(
             (self.workers, self.game_size * self.game_size)) * np.NINF
         for idx, game in enumerate(self.worker_games):
             action_masks[idx, game.free_tiles] = 0
         return action_masks
 
-    def calc_advantages(self, done, values, rewards):
+    def calc_advantages(self, done: torch.Tensor, values: torch.Tensor, rewards: torch.Tensor) -> torch.Tensor:
         """ 
         Calculate Generalized Advantage Estimate (GAE) following arXiv:1506.02438
         """
@@ -206,7 +208,7 @@ class Bot_Trainer:
 
         return advantages
 
-    def calc_loss(self, samples, CLIPeps, metrics=None):
+    def calc_loss(self, samples: Dict, CLIPeps: float, metrics: Optional[Dict] = None) -> torch.Tensor:
         """ Calculate loss """
 
         advantages = samples["advantages"]
@@ -334,7 +336,7 @@ class Bot_Trainer:
             self.plot_stats(gradients_records, figures)
             plt.show()
 
-    def plot_stats(self, records, figures):
+    def plot_stats(self, records: Dict, figures: Dict):
         for key in records:
             fig = figures[key]
             plt.figure(fig)
@@ -344,6 +346,24 @@ class Bot_Trainer:
             fig.canvas.draw()
             fig.canvas.flush_events()
             time.sleep(0.05)
+
+    def save_trainee(self, modelname, filename, metadata: Optional[Dict] = None):
+        """ Save trainee state and performance metadata. """
+        data = {
+            "name": modelname,
+            "meta": metadata,
+            "state_dict": self.trainee.state_dict()
+        }
+        with open(filename, "w") as file:
+            json.dump(data, file)
+
+    def load_trainee(self, filename, print_name=False):
+        """ Load trainee state_dict. """
+        with open(filename, "r") as file:
+            data = json.load(file)
+        if print_name:
+            print("Loading trainee", data["name"], sep=" ")
+        self.trainee.load_state_dict(data["state_dict"])
 
 
 def main():
