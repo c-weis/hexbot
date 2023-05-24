@@ -1,6 +1,11 @@
+from typing import List
+import torch
 import torch.nn as nn
+import numpy as np
+from torch.distributions import Categorical
 
-class Hex_Bot_Brain(nn.Module):
+
+class HexBotBrain(nn.Module):
     """
     An inner class housing the neural net \
     controlling Hex_Bot.
@@ -36,7 +41,6 @@ class Hex_Bot_Brain(nn.Module):
             nn.Linear(inner_neurons_2, 1),
         )
 
-
     def forward(self, x):
         """
         Take the game state and return (policy, value).
@@ -50,3 +54,11 @@ class Hex_Bot_Brain(nn.Module):
         pi = self.policy_tail(mid)
         v = self.value_tail(mid)
         return pi, v
+
+    def play_policy(self, flat_state: np.ndarray, free_tiles:List[int]):
+        with torch.no_grad():
+            pi, v = self.forward(torch.tensor(flat_state, dtype=torch.float32))
+            mask = torch.ones_like(pi) * (-torch.inf)
+            mask[free_tiles] = 0
+            prob_dist = Categorical(logits=pi+mask)
+            return prob_dist.sample()

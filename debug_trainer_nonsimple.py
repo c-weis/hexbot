@@ -1,6 +1,6 @@
 from tkinter import N
-from hex_game import Hex_Game
-from hex_bot import Hex_Bot, Hex_Bot_Brain
+from hex_game import HexGame
+from hex_bot import Hex_Bot, HexBotBrain
 from random import randint
 import torch
 import torch.nn as nn
@@ -8,7 +8,7 @@ from torch.distributions import Categorical
 from typing import Dict, List
 import numpy as np
 import time
-from bot_trainer import Debug_Bot
+from bot_trainer import DebugBot
 
 SERIOUS_COMPUTATION = False
 
@@ -33,7 +33,7 @@ class Two_State_Trainer:
     
     def __init__(self):
         self.sampling_steps = 1024  # number of steps per sampling thread
-        self.trainee = Debug_Bot(2)
+        self.trainee = DebugBot(2)
         self.sampling_updates = 50
         self.episodes_per_update = 512
 

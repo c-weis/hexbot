@@ -1,10 +1,10 @@
 import random
-from hex_game import Hex_Game
-from hex_bot import Hex_Bot_Brain
+from hex_game import HexGame
+from hex_bot import HexBotBrain
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical
-from typing import Dict, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 import numpy as np
 from matplotlib import pyplot as plt
 import time
@@ -13,7 +13,7 @@ import json
 device = torch.device("cpu")
 
 
-class Debug_Bot(nn.Module):
+class DebugBot(nn.Module):
 
     def __init__(self, hex_size: int, device: Optional[torch.device] = None):
         super().__init__()
@@ -49,10 +49,13 @@ class Debug_Bot(nn.Module):
         return pi, v
 
 
-class Bot_Trainer:
+class BotTrainer:
     """ PPO Trainer for hex_game bots. """
 
-    def __init__(self, game_size: int, bot_brain: nn.Module):
+    def __init__(self, bot_brain: nn.Module, game_size: int, opponent_pool: List[Tuple[float, Callable]] = [],
+                 sampling_updates=100, episodes_per_sampling=5):
+        # TODO(cw/cd): move all hyperparameters + defaults into method definition
+
         self.game_size = game_size
         self.total_actions = game_size * game_size
         self.workers = 8  # number of concurrent games/threads
@@ -67,9 +70,9 @@ class Bot_Trainer:
         # self.trainee = Debug_Bot(game_size)
 
         # number of times samples are collected during a training run
-        self.sampling_updates = 100
+        self.sampling_updates = sampling_updates
         # number of episodes in between consecutive sampling
-        self.episodes_per_sampling = 5
+        self.episodes_per_sampling = episodes_per_sampling
 
         # Generalized Advantage Estimation  hyperparameters
         self.GAEgamma = 0.99   # discount factor
@@ -83,10 +86,11 @@ class Bot_Trainer:
 
         # TODO (long-term): Instantiate these games in paralellel processes for speed up
         # Games are instantiated (Opponent Policy is currently none)
-        self.start_colors = [Hex_Game.RED if worker_index % 2 == 0 else Hex_Game.BLUE
+        self.start_colors = [HexGame.RED if worker_index % 2 == 0 else HexGame.BLUE
                              for worker_index in range(self.workers)]
-        self.worker_games = [Hex_Game(size=self.game_size, start_color=color,
-                                      render_mode="nonhuman", auto_reset=True)
+        self.worker_games = [HexGame(size=self.game_size, start_color=color,
+                                     opponent_pool=opponent_pool,
+                                     render_mode="nonhuman", auto_reset=True)
                              for color in self.start_colors]
         # Watch 0th worker play
         # self.worker_games[0].render_mode = "human"
@@ -172,7 +176,7 @@ class Bot_Trainer:
 
         return samples_dict
 
-    def get_numpy_action_masks(self) -> torch.Tensor:
+    def get_numpy_action_masks(self) -> np.ndarray:
         action_masks = np.ones(
             (self.workers, self.game_size * self.game_size)) * np.NINF
         for idx, game in enumerate(self.worker_games):
@@ -267,8 +271,8 @@ class Bot_Trainer:
         # loss = -loss_CLIP + self.loss_c1 * loss_VF
         return loss
 
-    def train(self, plot_stats=False):
-        """ Trains the brain. """
+    def train(self, plot_stats=False) -> Dict:
+        """ Trains the brain. Outputs metadata. """
         optimizer = torch.optim.SGD(
             params=self.trainee.parameters(), lr=0.05)
         # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.9)
@@ -336,6 +340,15 @@ class Bot_Trainer:
             self.plot_stats(gradients_records, figures)
             plt.show()
 
+        # TODO(cw/cd): Refactor below.
+        # Bad: duplicate code
+        samples = self.sample()
+        rewards = samples["rewards"]
+        game_wins = torch.count_nonzero(torch.gt(rewards, 0)).item()
+        game_losses = torch.count_nonzero(torch.lt(rewards, 0)).item()
+        score = game_wins / (game_wins + game_losses)
+        return {"score": score}
+
     def plot_stats(self, records: Dict, figures: Dict):
         for key in records:
             fig = figures[key]
@@ -349,20 +362,20 @@ class Bot_Trainer:
 
     def save_trainee(self, modelname, filename, metadata: Optional[Dict] = None):
         """ Save trainee state and performance metadata. """
+        # TODO(c): add some metadata to a 'global' data file in 
+        #          the root directory of the run
         data = {
             "name": modelname,
             "meta": metadata,
             "state_dict": self.trainee.state_dict()
         }
-        with open(filename, "w") as file:
-            json.dump(data, file)
 
-    def load_trainee(self, filename, print_name=False):
+        torch.save(data, filename)
+
+
+    def load_trainee(self, filename):
         """ Load trainee state_dict. """
-        with open(filename, "r") as file:
-            data = json.load(file)
-        if print_name:
-            print("Loading trainee", data["name"], sep=" ")
+        data = torch.load(filename)
         self.trainee.load_state_dict(data["state_dict"])
 
 
@@ -384,11 +397,11 @@ def main():
     random.seed(43)
 
     hex_size = 8
-    bot_brain = Hex_Bot_Brain(
+    bot_brain = HexBotBrain(
         hex_size=hex_size, inner_neurons_1=30, inner_neurons_2=30).to(device)
     # bot_brain = Debug_Bot(hex_size)
 
-    trainer = Bot_Trainer(game_size=hex_size, bot_brain=bot_brain)
+    trainer = BotTrainer(game_size=hex_size, bot_brain=bot_brain)
     # test_sample = trainer.sample()
     # print(test_sample)
     trainer.train(plot_stats=True)
