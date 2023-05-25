@@ -1,16 +1,21 @@
+import random
+from datetime import datetime
 from bot_trainer import BotTrainer
-from hex_bot import HexBotBrain
+from hex_bot import HexBot
 from hex_game import HexGame
 import os
 import torch
 from typing import Dict, List, Tuple, Optional
+from multiprocessing import Pool
 
 
 class BotEvolution:
     """ Performs multiple generations of training, playing off models against one another. """
     # TODO(cw/cd): add automatic storing of metadata with the models
 
-    def __init__(self, hex_size=8, generations=10, bots_per_generation=5, start_bots=None, start_opponent_policies=None):
+    def __init__(self, rootfolder=".", hex_size=8, generations=3, bots_per_generation=3, start_bots=None, start_opponent_policies=None):
+        self.rootfolder = rootfolder
+
         self.hex_size = hex_size
 
         self.generations = generations
@@ -18,7 +23,7 @@ class BotEvolution:
 
         if start_bots is None:
             self.bots = [
-                HexBotBrain(hex_size=self.hex_size)   # adjust here
+                HexBot(hex_size=self.hex_size)   # adjust here
                 for _ in range(self.bots_per_generation)
             ]
         else:
@@ -26,7 +31,7 @@ class BotEvolution:
 
         self.opponent_policies = start_opponent_policies
 
-    def play1v1(self, bot1: HexBotBrain, bot2: HexBotBrain, nr_games: int = 1000):
+    def play1v1(self, bot1: HexBot, bot2: HexBot, nr_games: int = 1000):
         """ 
         Play two bots off against one another. 
 
@@ -43,44 +48,76 @@ class BotEvolution:
                 score1 += 1
         return score1 / nr_games
 
-    def save_bot(self, bot: HexBotBrain, modelname, filename, metadata: Optional[Dict] = None):
+    def save_bot(self, bot: HexBot, modelname, filename, metadata: Optional[Dict] = None):
         """ Save bot state and performance metadata. """
-        # TODO(c): add some metadata to a 'global' data file in 
+        # TODO(c): add some metadata to a 'global' data file in
         #          the root directory of the run
         data = {
             "name": modelname,
             "meta": metadata,
-            "state_dict": bot.state_dict()
+            "bot": bot
         }
 
         torch.save(data, filename)
 
-    def evolve(self, folder="test"):
+    def load_bot(self, filename):
+        data = torch.load(filename)
+        return data["bot"]
+
+    def init_gen_worker_(self, gen_, opponent_pool_, botdata_folder_):
+        global gen
+        global opponent_pool
+        global botdata_folder
+
+        gen = gen_
+        opponent_pool = opponent_pool_
+        botdata_folder = botdata_folder_
+
+    def train_async(self, idx_bot):
+        idx, bot = idx_bot
+
+        print(f"Training bot {idx+1}/{self.bots_per_generation}.")
+        # TODO(cw/cd): introduce further hyperparameters as params to BotTrainer
+        trainer = BotTrainer(bot, game_size=self.hex_size,
+                             opponent_pool=opponent_pool,
+                             sampling_updates=1,
+                             episodes_per_sampling=1
+                             )
+        # Train bot - output metadata (a Dict)
+        # metadata should in particular include
+        # an overall "score"
+        metadata = trainer.train()
+        botname = f"gen{gen+1}bot{idx+1}"
+        filename = f"{botdata_folder}/{botname}"
+
+        self.save_bot(bot, botname, filename, metadata)
+
+        return metadata["score"]
+
+    def evolve(self, subfolder=None):
+        if subfolder is None:
+            date_prefix = datetime.now().date().strftime("%Y%m%d")
+            # generate random postfix
+            hash_postfix = "%x" % random.getrandbits(32)
+            subfolder = date_prefix + "_" + hash_postfix
+
+        folder = f"{self.rootfolder}/{subfolder}"
+        os.mkdir(folder)
+        botdata_folder = f"{folder}/botdata"
+        os.mkdir(botdata_folder)
+        report_file = f"{folder}/report.md"
+        data_file = f"{folder}/data"
+
         opponent_pool = []  # start playing against random policy
         for gen in range(self.generations):
             print(f"Generation {gen+1}/{self.generations}")
 
             scores = [0. for _ in range(self.bots_per_generation)]
-            for idx, bot in enumerate(self.bots):
-                print(f"Training bot {idx+1}/{self.bots_per_generation}.")
-                # TODO(cw/cd): introduce further hyperparameters as params to BotTrainer
-                trainer = BotTrainer(bot, game_size=self.hex_size,
-                                     opponent_pool=opponent_pool,
-                                     sampling_updates=1,
-                                     episodes_per_sampling=1
-                                     )
-                # Train bot - output metadata (a Dict)
-                # metadata should in particular include
-                # an overall "score"
-                metadata = trainer.train()
-                botname = f"gen{gen+1}bot{idx+1}"
-                botdata_folder = f"{folder}/botdata"
-                os.makedirs(botdata_folder, exist_ok=True)
-                filename = f"{botdata_folder}/gen{gen+1}bot{idx+1}"
 
-                scores[idx] = metadata["score"]
+            idx_bot = enumerate(self.bots)
 
-                self.save_bot(trainer.trainee, botname, filename, metadata)
+            with Pool(processes=self.bots_per_generation, initializer=self.init_gen_worker_, initargs=(gen, opponent_pool, botdata_folder)) as pool:
+                scores = pool.map(self.train_async, idx_bot)
 
             # Sort bots by score
             sorted_scores = sorted(
@@ -104,13 +141,13 @@ class BotEvolution:
 
             # Derive next generation of bots from this generation,
             # currently: cycle through top third
-            nr_bots_kept = self.bots_per_generation//3 
+            nr_bots_kept = self.bots_per_generation//3
             for bot_idx in range(self.bots_per_generation):
                 self.bots[bot_idx] = sorted_bots[bot_idx % nr_bots_kept][2]
 
         print("Evolution cycle complete.")
         # TODO(CW/CD): add more output here
-        # output best bot weights to a specific file (or create link) 
+        # output best bot weights to a specific file (or create link)
         # output metadata about evolution process to file
 
 

@@ -1,6 +1,6 @@
 from tkinter import N
 from hex_game import HexGame
-from hex_bot import Hex_Bot, HexBotBrain
+from hex_bot import Hex_Bot, HexBot
 from random import randint
 import torch
 import torch.nn as nn

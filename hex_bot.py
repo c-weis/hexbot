@@ -5,7 +5,7 @@ import numpy as np
 from torch.distributions import Categorical
 
 
-class HexBotBrain(nn.Module):
+class HexBot(nn.Module):
     """
     An inner class housing the neural net \
     controlling Hex_Bot.

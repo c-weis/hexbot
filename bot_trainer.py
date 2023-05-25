@@ -1,6 +1,6 @@
 import random
 from hex_game import HexGame
-from hex_bot import HexBotBrain
+from hex_bot import HexBot
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical
@@ -379,7 +379,7 @@ def main():
     random.seed(43)
 
     hex_size = 8
-    bot_brain = HexBotBrain(
+    bot_brain = HexBot(
         hex_size=hex_size, inner_neurons_1=30, inner_neurons_2=30).to(device)
     # bot_brain = Debug_Bot(hex_size)
 
