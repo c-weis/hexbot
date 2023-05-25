@@ -1,6 +1,7 @@
 from typing import List
 import torch
 import torch.nn as nn
+import random
 import numpy as np
 from torch.distributions import Categorical
 
@@ -60,5 +61,6 @@ class HexBot(nn.Module):
             pi, v = self.forward(torch.tensor(flat_state, dtype=torch.float32))
             mask = torch.ones_like(pi) * (-torch.inf)
             mask[free_tiles] = 0
+            x = random.random()
             prob_dist = Categorical(logits=pi+mask)
             return prob_dist.sample()

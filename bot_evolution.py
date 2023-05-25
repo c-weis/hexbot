@@ -7,13 +7,14 @@ import os
 import torch
 from typing import Dict, List, Tuple, Optional
 from multiprocessing import Pool
+from copy import deepcopy
 
 
 class BotEvolution:
     """ Performs multiple generations of training, playing off models against one another. """
     # TODO(cw/cd): add automatic storing of metadata with the models
 
-    def __init__(self, rootfolder=".", hex_size=8, generations=3, bots_per_generation=3, start_bots=None, start_opponent_policies=None):
+    def __init__(self, rootfolder=".", hex_size=8, generations=10, bots_per_generation=10, start_bots=None, start_opponent_policies=None):
         self.rootfolder = rootfolder
 
         self.hex_size = hex_size
@@ -80,8 +81,8 @@ class BotEvolution:
         # TODO(cw/cd): introduce further hyperparameters as params to BotTrainer
         trainer = BotTrainer(bot, game_size=self.hex_size,
                              opponent_pool=opponent_pool,
-                             sampling_updates=1,
-                             episodes_per_sampling=1
+                             sampling_updates=100,
+                             episodes_per_sampling=5
                              )
         # Train bot - output metadata (a Dict)
         # metadata should in particular include
@@ -119,6 +120,9 @@ class BotEvolution:
             with Pool(processes=self.bots_per_generation, initializer=self.init_gen_worker_, initargs=(gen, opponent_pool, botdata_folder)) as pool:
                 scores = pool.map(self.train_async, idx_bot)
 
+            # self.init_gen_worker_(gen, opponent_pool, botdata_folder)
+            # scores = map(self.train_async, idx_bot)
+
             # Sort bots by score
             sorted_scores = sorted(
                 enumerate(scores), key=lambda idx_score: idx_score[1], reverse=True)
@@ -136,14 +140,14 @@ class BotEvolution:
             #  1. half the weight of existing opponents
             #  2. add the bots of this round with weight 1
             opponent_pool = [(weight/2, policy)
-                             for weight, policy in opponent_pool]
+                            for weight, policy in opponent_pool]
             opponent_pool += [(1., bot.play_policy) for bot in self.bots]
 
             # Derive next generation of bots from this generation,
             # currently: cycle through top third
-            nr_bots_kept = self.bots_per_generation//3
+            nr_bots_kept = (self.bots_per_generation+2)//3
             for bot_idx in range(self.bots_per_generation):
-                self.bots[bot_idx] = sorted_bots[bot_idx % nr_bots_kept][2]
+                self.bots[bot_idx] = deepcopy(sorted_bots[bot_idx % nr_bots_kept][2])
 
         print("Evolution cycle complete.")
         # TODO(CW/CD): add more output here
