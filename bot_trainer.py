@@ -360,24 +360,6 @@ class BotTrainer:
             fig.canvas.flush_events()
             time.sleep(0.05)
 
-    def save_trainee(self, modelname, filename, metadata: Optional[Dict] = None):
-        """ Save trainee state and performance metadata. """
-        # TODO(c): add some metadata to a 'global' data file in 
-        #          the root directory of the run
-        data = {
-            "name": modelname,
-            "meta": metadata,
-            "state_dict": self.trainee.state_dict()
-        }
-
-        torch.save(data, filename)
-
-
-    def load_trainee(self, filename):
-        """ Load trainee state_dict. """
-        data = torch.load(filename)
-        self.trainee.load_state_dict(data["state_dict"])
-
 
 def main():
     """ write test code here """

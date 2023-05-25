@@ -2,6 +2,8 @@ from bot_trainer import BotTrainer
 from hex_bot import HexBotBrain
 from hex_game import HexGame
 import os
+import torch
+from typing import Dict, List, Tuple, Optional
 
 
 class BotEvolution:
@@ -41,7 +43,19 @@ class BotEvolution:
                 score1 += 1
         return score1 / nr_games
 
-    def evolute(self, folder="test"):
+    def save_bot(self, bot: HexBotBrain, modelname, filename, metadata: Optional[Dict] = None):
+        """ Save bot state and performance metadata. """
+        # TODO(c): add some metadata to a 'global' data file in 
+        #          the root directory of the run
+        data = {
+            "name": modelname,
+            "meta": metadata,
+            "state_dict": bot.state_dict()
+        }
+
+        torch.save(data, filename)
+
+    def evolve(self, folder="test"):
         opponent_pool = []  # start playing against random policy
         for gen in range(self.generations):
             print(f"Generation {gen+1}/{self.generations}")
@@ -66,7 +80,7 @@ class BotEvolution:
 
                 scores[idx] = metadata["score"]
 
-                trainer.save_trainee(botname, filename, metadata)
+                self.save_bot(trainer.trainee, botname, filename, metadata)
 
             # Sort bots by score
             sorted_scores = sorted(
@@ -86,7 +100,7 @@ class BotEvolution:
             #  2. add the bots of this round with weight 1
             opponent_pool = [(weight/2, policy)
                              for weight, policy in opponent_pool]
-            opponent_pool = [(1., bot.play_policy) for bot in self.bots]
+            opponent_pool += [(1., bot.play_policy) for bot in self.bots]
 
             # Derive next generation of bots from this generation,
             # currently: cycle through top third
@@ -102,7 +116,7 @@ class BotEvolution:
 
 def main():
     bot_evo = BotEvolution()
-    bot_evo.evolute()
+    bot_evo.evolve()
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 import gymnasium as gym
 from gymnasium import spaces
-from typing import Callable, List, LiteralString, Optional, Tuple, Set
+from typing import Callable, List, Optional, Tuple, Set
 import pygame
 import numpy as np
 import random
@@ -19,7 +19,7 @@ class HexGame(gym.Env):
             start_color=RED,
             opponent_policy: Optional[Callable] = None,
             opponent_pool: List[Tuple[float, Callable]] = [],
-            render_mode: Optional[LiteralString] = "human",
+            render_mode: Optional[str] = "human",
             auto_reset: bool = False,
             optimal_2x2_play: bool = False):
         """
