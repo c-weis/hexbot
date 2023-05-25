@@ -29,20 +29,25 @@ class BotEvolution:
         self.bots_per_generation = bots_per_generation
         self.bots = [i for i in range(self.bots_per_generation)]
         self.folder="test_parallel"
+    
+    def pool_init(self, g, f):
+        global gen
+        gen = g
+        global folder
+        folder = f
 
     def train_async(self, idx_bot : Tuple[int,int]):
             # print(id(self))
             idx, bot = idx_bot
             trainer = BotTrainerTemp(id=idx) 
             metadata = trainer.train()
-            gen = 1
-            folder = self.folder
+            # gen = 1
+            # folder = self.folder
             botname = f"gen{gen+1}bot{idx+1}"
             botdata_folder = f"{folder}/botdata"
             os.makedirs(botdata_folder, exist_ok=True)
             filename = f"{botdata_folder}/gen{gen+1}bot{idx+1}"
             return metadata["score"]
-
 
     def evolve_parallel(self):
         for gen in range(self.generations):
@@ -50,7 +55,8 @@ class BotEvolution:
 
             scores = [0. for _ in range(self.bots_per_generation)]
             print("start")
-            with Pool(processes = self.bots_per_generation) as pool:
+            
+            with Pool(processes = self.bots_per_generation, initializer=self.pool_init, initargs=(gen, self.folder)) as pool:
                 scores = pool.map(self.train_async, enumerate(self.bots))
 
                 # for idx, bot in enumerate(self.bots):
@@ -119,7 +125,7 @@ class BotEvolution:
 
 def main():
     bot_evo = BotEvolution()
-    bot_evo.evolve_non_parallel()
+    bot_evo.evolve_parallel()
 
 
 if __name__ == "__main__":
