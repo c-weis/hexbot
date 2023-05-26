@@ -1,3 +1,4 @@
+from copy import deepcopy
 import random
 from datetime import datetime
 from bot_trainer import BotTrainer
@@ -13,7 +14,7 @@ class BotEvolution:
     """ Performs multiple generations of training, playing off models against one another. """
     # TODO(cw/cd): add automatic storing of metadata with the models
 
-    def __init__(self, rootfolder=".", hex_size=8, generations=3, bots_per_generation=3, start_bots=None, start_opponent_policies=None):
+    def __init__(self, rootfolder="./bot_evolution_output/", hex_size=8, generations=3, bots_per_generation=10, start_bots=None, start_opponent_policies=None):
         self.rootfolder = rootfolder
 
         self.hex_size = hex_size
@@ -80,8 +81,8 @@ class BotEvolution:
         # TODO(cw/cd): introduce further hyperparameters as params to BotTrainer
         trainer = BotTrainer(bot, game_size=self.hex_size,
                              opponent_pool=opponent_pool,
-                             sampling_updates=1,
-                             episodes_per_sampling=1
+                             sampling_updates=50,
+                             episodes_per_sampling=5
                              )
         # Train bot - output metadata (a Dict)
         # metadata should in particular include
@@ -143,7 +144,7 @@ class BotEvolution:
             # currently: cycle through top third
             nr_bots_kept = self.bots_per_generation//3
             for bot_idx in range(self.bots_per_generation):
-                self.bots[bot_idx] = sorted_bots[bot_idx % nr_bots_kept][2]
+                self.bots[bot_idx] = deepcopy(sorted_bots[bot_idx % nr_bots_kept][2])
 
         print("Evolution cycle complete.")
         # TODO(CW/CD): add more output here

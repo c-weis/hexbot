@@ -40,6 +40,8 @@ class HexGame(gym.Env):
             "rgb_array": return rgb_array for rendering on demand
         """
         super().__init__()
+
+        # Game statics initilization
         self.size = size
         self.state = np.array([[HexGame.EMPTY for _ in range(size)]
                                for _ in range(size)])
@@ -49,7 +51,9 @@ class HexGame(gym.Env):
         self.opponent_color = HexGame.OPPONENT_COLOR
         self.auto_reset = auto_reset
         self.optimal_2x2_play = optimal_2x2_play
-
+        
+        # Game dynamics (policy) initialization
+        """ ASSUMPTION: opponent looks at tranposed board """
         if (opponent_pool) and (opponent_policy is None):
             self.opponent_pool = opponent_pool
             self.opponent_policy = self.pick_pool_policy()
@@ -62,9 +66,15 @@ class HexGame(gym.Env):
             self.opponent_pool = None
             self.opponent_policy = opponent_policy
 
+        # Required by gymnasium gym.Env
         self.action_space = spaces.Discrete(self.size * self.size)
+
+        # Board index lookup lists
         self._action_to_hexagon = [
             divmod(idx, self.size) for idx in range(self.size * self.size)
+        ]
+        self._transpose_action = [
+            (idx % self.size)*self.size + (idx // self.size) for idx in range(self.size * self.size)
         ]
 
         # Render stuff
@@ -76,6 +86,12 @@ class HexGame(gym.Env):
         # If opponent plays first, make that move
         if self.start_color == self.opponent_color:
             self.opponent_play()
+
+    """
+    +----------------+
+    | POLICY METHODS |
+    +----------------+
+    """
 
     def pick_pool_policy(self):
         """
@@ -91,9 +107,57 @@ class HexGame(gym.Env):
         print("Error: no policy selected.")
         return None
 
-    def flat_state(self):
+    def optimal_2x2_policy(self, state, free_tiles):
+        """
+        recall action integer to hex tile is:
+        0 - 2              0 - 1
+        | / |  ( AND NOT   | / | )
+        1 - 3              2 - 3
+        ...see 'play_tile' method for why...
+        """
+        if self.size > 2:
+            raise Exception("Uhh, wrong grid size for optimal 2x2 policy")
+        if len(free_tiles) == 4:
+            return 1
+        elif len(free_tiles) == 3:
+            if 1 in free_tiles and 3 in free_tiles:
+                return 1
+            else:
+                return 2
+        elif len(free_tiles) == 2:
+            if 3 in free_tiles:
+                return 3
+            else:
+                return 2
+        else:
+            for x in free_tiles:
+                return x
+
+    def rand_policy(self, state, free_tiles):
+        """ 
+        The random policy which simply selects a random free tile.
+        """
+        rand_free_tile_index = random.randint(0, len(free_tiles)-1)
+        return free_tiles[rand_free_tile_index]
+
+    def first_free_tile_policy(self, state, free_tiles):
+        """
+        The 'first free tile' policy which plays the tile to the 
+        upper-left-most free space.
+        """
+        return free_tiles[0]
+    
+    """
+    +----------------------+
+    | GAME STATICS METHODS |
+    +----------------------+
+    """
+
+    def flat_state(self, transpose_roles=False):
         """
         Getter function returning the flattened state of the game.
+        If transpose_roles=True, then transposed state (switched colors, 
+        90-deg rotated board) is returned.
         """
         state = np.zeros((self.size, self.size, 2), dtype=np.float32)
 
@@ -102,52 +166,19 @@ class HexGame(gym.Env):
                 if self.state[x, y] == 0:
                     continue
                 else:
-                    state[x, y, self.state[y, x]-1] = 1
+                    # Recall RED = 1 and BLUE = 2
+                    color = self.state[y, x]-1
+                    # Switch color if transpose_roles
+                    if transpose_roles:
+                        color = (color + 1) % 2
+                    state[x, y, color] = 1
                 # For 3-Hot encoding use this instead:
                 # state[x,y,self.state[y,x]] = 1
-
+        # Rotate board if transpose_roles
+        if transpose_roles:
+            state = np.swapaxes(state, 0,1)
         return state.reshape(self.size * self.size * 2)
-
-    def optimal_2x2_policy(self):
-        """
-        recall hex tile indexing for 2x2 grid:
-        0 - 2         0 - 1
-        | / |   NOT   | / | 
-        1 - 3         2 - 3
-        """
-        if self.size > 2:
-            raise Exception("Uhh, wrong grid size for optimal 2x2 policy")
-        if len(self.free_tiles) == 4:
-            return 1
-        elif len(self.free_tiles) == 3:
-            if 1 in self.free_tiles and 3 in self.free_tiles:
-                return 1
-            else:
-                return 2
-        elif len(self.free_tiles) == 2:
-            if 3 in self.free_tiles:
-                return 3
-            else:
-                return 2
-        else:
-            for x in self.free_tiles:
-                return x
-
-    def rand_policy(self, _, __):
-        """ 
-        The 'random' policy which ignores the state and 
-        selects a random free tile.
-        """
-        rand_free_tile_index = random.randint(0, len(self.free_tiles)-1)
-        return self.free_tiles[rand_free_tile_index]
-
-    def first_free_tile_policy(self, _, __):
-        """
-        The 'first free tile' policy which plays the tile to the 
-        upper-left-most free space.
-        """
-        return self.free_tiles[0]
-
+    
     def neighbours(self, row: int, col: int) -> List[Tuple[int]]:
         """
         Return the neighbours of (row,col) in a list
@@ -196,6 +227,12 @@ class HexGame(gym.Env):
                 border1 = border1 or b1
                 border2 = border2 or b2
         return border1, border2
+    
+    """
+    +-----------------------+
+    | GAME DYNAMICS METHODS |
+    +-----------------------+
+    """
 
     def play_tile(self, action: int, color) -> bool:
         """
@@ -212,7 +249,7 @@ class HexGame(gym.Env):
         row, column = self._action_to_hexagon[action]
 
         self.free_tiles.remove(action)
-
+        
         self.state[column, row] = color
 
         border1, border2 = self.borders_reached_from_tile(
@@ -242,8 +279,14 @@ class HexGame(gym.Env):
         return False
 
     def opponent_play(self):
-        """Execute opponent policy. Return whether opponent wins."""
-        opponent_action = self.opponent_policy(self.flat_state(), self.free_tiles)
+        """
+        Execute opponent policy. Return whether opponent wins.
+        ASSUMPTION: opponent looks at tranposed board
+        """
+        transposed_state = self.flat_state(transpose_roles=True)
+        transposed_free_tile = [self._transpose_action[idx] for idx in self.free_tiles]
+        transposed_opponent_action = self.opponent_policy(transposed_state, transposed_free_tile)
+        opponent_action = self._transpose_action[transposed_opponent_action]
         return self.play_tile(opponent_action, self.opponent_color)
 
     def reset(self):
@@ -297,7 +340,11 @@ class HexGame(gym.Env):
 
         return new_state, reward, terminated, False, info
 
-    """ RENDERING THINGS """
+    """ 
+    +-------------------+
+    | RENDERING METHODS |
+    +-------------------+
+    """
 
     def render(self):
         """Return an rgb_array on demand if we're not rendering
