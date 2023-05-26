@@ -18,7 +18,7 @@ class HexGame(gym.Env):
             size: int = 5,
             start_color=RED,
             opponent_policy: Optional[Callable] = None,
-            opponent_pool: List[Tuple[float, Callable]] = [],
+            opponent_pool: List[Tuple[float, Callable]] = None,
             render_mode: Optional[str] = "human",
             auto_reset: bool = False,
             optimal_2x2_play: bool = False):
@@ -53,18 +53,17 @@ class HexGame(gym.Env):
         self.optimal_2x2_play = optimal_2x2_play
         
         # Game dynamics (policy) initialization
-        """ ASSUMPTION: opponent looks at tranposed board """
         if (opponent_pool) and (opponent_policy is None):
             self.opponent_pool = opponent_pool
             self.opponent_policy = self.pick_pool_policy()
-        elif opponent_policy is None:
-            self.opponent_pool = None
-            self.opponent_policy = self.rand_policy
-        else:
-            print(
-                "Both opponent_policy and opponent_pool specified. Ignoring opponent_pool.")
+        elif (opponent_policy):
             self.opponent_pool = None
             self.opponent_policy = opponent_policy
+            if (opponent_pool):
+                print("Both opponent_policy and opponent_pool specified. Ignoring opponent_pool.")
+        else:
+            self.opponent_pool = None
+            self.opponent_policy = self.rand_policy
 
         # Required by gymnasium gym.Env
         self.action_space = spaces.Discrete(self.size * self.size)
@@ -270,7 +269,7 @@ class HexGame(gym.Env):
         """
         terminated = False
         while not terminated:
-            action = player_policy(self.state, self.free_tiles)
+            action = player_policy(self.flat_state(), self.free_tiles)
             _, reward, terminated, _, _ = self.step(action)
 
         if reward > 0:

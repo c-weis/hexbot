@@ -33,7 +33,7 @@ class BotEvolution:
 
         self.opponent_policies = start_opponent_policies
 
-    def play1v1(self, bot1: HexBot, bot2: HexBot, nr_games: int = 1000):
+    def play1v1(self, bot1: HexBot, bot2: HexBot, nr_games: int = 1000, render="none"):
         """ 
         Play two bots off against one another. 
 
@@ -42,8 +42,10 @@ class BotEvolution:
         score1 = 0
         for game_idx in range(nr_games):
             game = HexGame(
-                hex_size=self.hex_size, start_color=HexGame.RED if game_idx % 2 == 0 else HexGame.BLUE,
-                opponent_policy=bot2.play_policy
+                size=self.hex_size, 
+                start_color=HexGame.RED if game_idx % 2 == 0 else HexGame.BLUE, 
+                render_mode=render,
+                opponent_policy=bot2.play_policy 
             )
             bot1_wins = game.play_out(bot1.play_policy)
             if bot1_wins:
@@ -140,7 +142,7 @@ class BotEvolution:
             # Update opponent pool:
             #  1. half the weight of existing opponents
             #  2. add the bots of this round with weight 1
-            opponent_pool = [(weight/2, policy)
+            opponent_pool = [(weight/1.4, policy)
                             for weight, policy in opponent_pool]
             opponent_pool += [(1., bot.play_policy) for bot in self.bots]
 
@@ -156,10 +158,25 @@ class BotEvolution:
         # output metadata about evolution process to file
 
 
+"""
++++ SEE YOU BOTS FIGHT!! +++
+Call for a fight like this from console:
+    >>> import bot_evolution
+    >>> bot_evolution.make_them_play("20230526_1ef8162b/botdata/gen3bot8", "20230526_1ef8162b/botdata/gen3bot2", 2)
+"""
+def make_them_play(bot1_filename, bot2_filename, nr_games):
+    bot_evo_arena = BotEvolution()
+    # bot_evo.evolve()
+    bot1data = torch.load("./bot_evolution_output/" + bot1_filename)
+    bot1 = bot1data["bot"]
+    bot2data = torch.load("./bot_evolution_output/" + bot2_filename)
+    bot2 = bot2data["bot"]
+    bot_evo_arena.play1v1(bot1, bot2, nr_games, "human")
+
+
 def main():
     bot_evo = BotEvolution()
     bot_evo.evolve()
-
 
 if __name__ == "__main__":
     main()

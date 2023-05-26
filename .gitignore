@@ -135,3 +135,4 @@ dmypy.json
 
 # VS code files
 .vscode/
+*.swp
