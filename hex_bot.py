@@ -13,7 +13,7 @@ class HexBot(nn.Module):
     """
 
     def __init__(self, hex_size,
-                 inner_neurons_1: int = 50, inner_neurons_2: int = 50):
+                 inner_neurons_1: int = 64, inner_neurons_2: int = 64):
         """
         Initialise perceptron which outputs (policy, value) given (state).
 
