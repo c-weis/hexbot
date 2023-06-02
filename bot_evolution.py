@@ -15,20 +15,19 @@ class BotEvolution:
     """ Performs multiple generations of training, playing off models against one another. """
     # TODO(cw/cd): add automatic storing of metadata with the models
 
-    def __init__(self, rootfolder="./bot_evolution_output", 
-                 hex_size=8, 
-                 generations=3, 
-                 bots_per_generation=10, 
+    def __init__(self, 
+                 rootfolder="./bot_evolution_output/", 
+                 hex_size=5, generations=15, 
+                 bots_per_generation=15, 
                  start_bots=None, 
                  start_opponent_policies=None,
-                 ):
+                 monitoring=False):
         self.rootfolder = rootfolder
 
         self.hex_size = hex_size
 
         self.generations = generations
         self.bots_per_generation = bots_per_generation
-
         if start_bots is None:
             self.bots = [
                 HexBot(hex_size=self.hex_size)   # adjust here
@@ -36,8 +35,10 @@ class BotEvolution:
             ]
         else:
             self.bots = start_bots
-
         self.opponent_policies = start_opponent_policies
+
+        self.human_monitoring_enabled = monitoring
+
 
     def play1v1(self, bot1: HexBot, bot2: HexBot, nr_games: int = 1000, render="none"):
         """ 
@@ -106,9 +107,9 @@ class BotEvolution:
 
     def evolve(self, subfolder=None):
         if subfolder is None:
-            date_prefix = datetime.now().date().strftime("%Y%m%d")
+            date_prefix = datetime.now().strftime("%y%m%d%H%M")
             # generate random postfix
-            hash_postfix = "%x" % random.getrandbits(32)
+            hash_postfix = "%x" % random.getrandbits(16)
             subfolder = date_prefix + "_" + hash_postfix
 
         folder = f"{self.rootfolder}/{subfolder}"
@@ -126,7 +127,9 @@ class BotEvolution:
 
             idx_bot = enumerate(self.bots)
 
-            with Pool(processes=self.bots_per_generation, initializer=self.init_gen_worker_, initargs=(gen, opponent_pool, botdata_folder)) as pool:
+            with Pool(processes=self.bots_per_generation, 
+                      initializer=self.init_gen_worker_, 
+                      initargs=(gen, opponent_pool, botdata_folder)) as pool:
                 scores = pool.map(self.train_async, idx_bot)
 
             # self.init_gen_worker_(gen, opponent_pool, botdata_folder)
@@ -148,15 +151,20 @@ class BotEvolution:
             # Update opponent pool:
             #  1. half the weight of existing opponents
             #  2. add the bots of this round with weight 1
-            opponent_pool = [(weight/1.4, policy)
+            opponent_pool = [(weight/1.02, policy)
                             for weight, policy in opponent_pool]
             opponent_pool += [(1., bot.play_policy) for bot in self.bots]
 
             # Derive next generation of bots from this generation,
             # currently: cycle through top third
-            nr_bots_kept = (self.bots_per_generation+2)//3
+            nr_bots_kept = self.bots_per_generation-1
             for bot_idx in range(self.bots_per_generation):
                 self.bots[bot_idx] = deepcopy(sorted_bots[bot_idx % nr_bots_kept][2])
+
+            if self.human_monitoring_enabled:
+                self.play1v1(bot1=self.bots[0], bot2=self.bots[1], nr_games=1,render="human")
+
+
 
         print("Evolution cycle complete.")
         # TODO(CW/CD): add more output here
@@ -181,7 +189,7 @@ def make_them_play(bot1_filename, bot2_filename, nr_games):
 
 
 def main():
-    bot_evo = BotEvolution()
+    bot_evo = BotEvolution(monitoring=True)
     bot_evo.evolve()
 
 if __name__ == "__main__":
