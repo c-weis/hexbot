@@ -15,7 +15,13 @@ class BotEvolution:
     """ Performs multiple generations of training, playing off models against one another. """
     # TODO(cw/cd): add automatic storing of metadata with the models
 
-    def __init__(self, rootfolder="./bot_evolution_output/", hex_size=8, generations=3, bots_per_generation=10, start_bots=None, start_opponent_policies=None):
+    def __init__(self, rootfolder="./bot_evolution_output", 
+                 hex_size=8, 
+                 generations=3, 
+                 bots_per_generation=10, 
+                 start_bots=None, 
+                 start_opponent_policies=None,
+                 ):
         self.rootfolder = rootfolder
 
         self.hex_size = hex_size
@@ -159,7 +165,7 @@ class BotEvolution:
 
 
 """
-+++ SEE YOU BOTS FIGHT!! +++
++++ SEE YOUR BOTS FIGHT!! +++
 Call for a fight like this from console:
     >>> import bot_evolution
     >>> bot_evolution.make_them_play("20230526_1ef8162b/botdata/gen3bot8", "20230526_1ef8162b/botdata/gen3bot2", 2)
