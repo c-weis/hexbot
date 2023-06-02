@@ -17,8 +17,8 @@ class BotEvolution:
 
     def __init__(self, 
                  rootfolder="./bot_evolution_output/", 
-                 hex_size=8, generations=3, 
-                 bots_per_generation=10, 
+                 hex_size=5, generations=15, 
+                 bots_per_generation=15, 
                  start_bots=None, 
                  start_opponent_policies=None,
                  monitoring=False):
@@ -151,13 +151,13 @@ class BotEvolution:
             # Update opponent pool:
             #  1. half the weight of existing opponents
             #  2. add the bots of this round with weight 1
-            opponent_pool = [(weight/1.4, policy)
+            opponent_pool = [(weight/1.02, policy)
                             for weight, policy in opponent_pool]
             opponent_pool += [(1., bot.play_policy) for bot in self.bots]
 
             # Derive next generation of bots from this generation,
             # currently: cycle through top third
-            nr_bots_kept = (self.bots_per_generation+2)//3
+            nr_bots_kept = self.bots_per_generation-1
             for bot_idx in range(self.bots_per_generation):
                 self.bots[bot_idx] = deepcopy(sorted_bots[bot_idx % nr_bots_kept][2])
 
