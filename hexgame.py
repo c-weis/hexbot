@@ -1,7 +1,7 @@
 import random
 from typing import Callable, List, Optional, Tuple, Set
-import pygame
 import numpy as np
+import pygame
 
 
 class HexGame:

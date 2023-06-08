@@ -1,12 +1,12 @@
 import random
-from hexgame import HexGame
-from hexbot import HexBot
+import time
+from typing import Callable, Dict, List, Tuple
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical
-from typing import Callable, Dict, List, Tuple
-import numpy as np
-import time
+from hexbot import HexBot
+from hexgame import HexGame
 
 device = torch.device("cpu")
 

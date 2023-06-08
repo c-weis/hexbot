@@ -1,10 +1,10 @@
-from os import makedirs, mkdir
-import random
 from copy import deepcopy
 from datetime import datetime
-import torch
-from typing import Callable, Dict, List, Tuple, Optional
+from os import makedirs, mkdir
 from multiprocessing import Pool
+import random
+from typing import Callable, Dict, List, Tuple, Optional
+import torch
 from hexbot import HexBot
 from hexgame import HexGame
 from bottrainer import BotTrainer
@@ -192,7 +192,7 @@ class BotEvolution:
         print("Evolution cycle complete.")
 
 
-def make_them_play(bot1_filename: str, bot2_filename: str, nr_games: int, rootfolder: str = "./output/"):
+def make_them_play(bot1_filename: str, bot2_filename: str, nr_games: int = 1, rootfolder: str = "./output/"):
     """ 
     Display a given number of games between bot1 and bot2. 
 
