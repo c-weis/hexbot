@@ -1,6 +1,6 @@
 ## Hexbot: minimal PPO for the hex board game
 
-`Hexbot` is a small implementation of the [Proximal Policy Optimization](https://arxiv.org/abs/1707.06347) (PPO) algorithm for training a deep neural network to play the board game [Hex](https://en.wikipedia.org/wiki/Hex_(board_game)). The code leverages several standard  `pytorch` functionalities but otherwise implements PPO 'from scratch' (see the [acknowledgements](#references-and-acknowledgements) for our sources of inspiration). `Hexbot` also comprises an implementation of an envirenment for the Hex board game (without the [swap rule](https://en.wikipedia.org/wiki/Swap_rule)) with a rendering functionality based on the `pygame` library.
+`Hexbot` is a small implementation of the [Proximal Policy Optimization](https://arxiv.org/abs/1707.06347) (PPO) algorithm for training a deep neural network to play the board game [Hex](https://en.wikipedia.org/wiki/Hex_(board_game)). The code leverages several standard  `pytorch` functionalities but otherwise implements PPO 'from scratch' (see the [acknowledgements](#references-and-acknowledgements) for our sources of inspiration). `Hexbot` also comprises an implementation of an environment for the Hex board game (without the [swap rule](https://en.wikipedia.org/wiki/Swap_rule)) with a rendering functionality based on the `pygame` library.
 
 - [Hexbot: minimal PPO for the hex board game](#hexbot-minimal-ppo-for-the-hex-board-game)
   - [Installation](#installation)
@@ -28,9 +28,15 @@
     bot_evo = BotEvolution(monitoring=True)
     bot_evo.evolve()
     ```
-    > The arguement `monitoring=True` will render a single game of the two best-performing bots at the end of each generation (see [below](#explanation-the-hexbot-training-loop))
+    > The argument `monitoring=True` will render a single game of the two best-performing bots at the end of each generation (see [below](#explanation-the-hexbot-training-loop))
 
     > There are several further arguments that can be passed to the `BotEvolution` class, controlling, for instance, the hex board size or the number of agent policies to be trained per generation.
+
+    Bots will be saved in a folder specified by the `rootfolder` argument (defaulting to `"./output/"`). Bot can be loaded using `torch.load`. See for instance the `make_them_play` function which loads two specified bots, and renders a game (or $n$ games) in which these bots play against one another.
+    ```python
+    import PATH/botevolution
+    botevolution.make_them_play("PATH-BOT1", "PATH-BOT2", NUMBER_OF_GAMES)
+    ```
 
 * **Hexbot training (training a single policy)**. The bot training library can be used as follows:
     ```python

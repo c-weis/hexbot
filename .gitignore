@@ -136,3 +136,4 @@ dmypy.json
 # VS code files
 .vscode/
 *.swp
+.DS_Store
