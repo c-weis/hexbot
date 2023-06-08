@@ -1,12 +1,10 @@
-import gymnasium as gym
-from gymnasium import spaces
 from typing import Callable, List, Optional, Tuple, Set
 import pygame
 import numpy as np
 import random
 
 
-class HexGame(gym.Env):
+class HexGame:
     EMPTY, RED, BLUE = [0, 1, 2]
     PLAYER_COLOR = RED
     OPPONENT_COLOR = BLUE
@@ -64,9 +62,6 @@ class HexGame(gym.Env):
         else:
             self.opponent_pool = None
             self.opponent_policy = self.rand_policy
-
-        # Required by gymnasium gym.Env
-        self.action_space = spaces.Discrete(self.size * self.size)
 
         # Board index lookup lists
         self._action_to_hexagon = [

@@ -1,27 +1,27 @@
-from copy import deepcopy
+import os
 import random
+from copy import deepcopy
 from datetime import datetime
-from bot_trainer import BotTrainer
+import torch
+from typing import Callable, Dict, List, Tuple, Optional
+from multiprocessing import Pool
 from hex_bot import HexBot
 from hex_game import HexGame
-import os
-import torch
-from typing import Dict, List, Tuple, Optional
-from multiprocessing import Pool
-from copy import deepcopy
+from bot_trainer import BotTrainer
 
 
 class BotEvolution:
-    """ Performs multiple generations of training, playing off models against one another. """
-    # TODO(cw/cd): add automatic storing of metadata with the models
+    """ 
+    Environment to perform multiple generations of training.
+    """
 
-    def __init__(self, 
-                 rootfolder="./bot_evolution_output/", 
-                 hex_size=5, generations=15, 
-                 bots_per_generation=15, 
-                 start_bots=None, 
-                 start_opponent_policies=None,
-                 monitoring=False):
+    def __init__(self,
+                 rootfolder: str = "./bot_evolution_output/",
+                 hex_size: int = 5, generations: int = 15,
+                 bots_per_generation: int = 15,
+                 start_bots: List[HexBot] = None,
+                 start_opponent_policies: List[Tuple[float, Callable]] = None,
+                 monitoring: bool = False):
         self.rootfolder = rootfolder
 
         self.hex_size = hex_size
@@ -39,8 +39,7 @@ class BotEvolution:
 
         self.human_monitoring_enabled = monitoring
 
-
-    def play1v1(self, bot1: HexBot, bot2: HexBot, nr_games: int = 1000, render="none"):
+    def play1v1(self, bot1: HexBot, bot2: HexBot, nr_games: int = 1000, render: str = "none") -> float:
         """ 
         Play two bots off against one another. 
 
@@ -49,20 +48,18 @@ class BotEvolution:
         score1 = 0
         for game_idx in range(nr_games):
             game = HexGame(
-                size=self.hex_size, 
-                start_color=HexGame.RED if game_idx % 2 == 0 else HexGame.BLUE, 
+                size=self.hex_size,
+                start_color=HexGame.RED if game_idx % 2 == 0 else HexGame.BLUE,
                 render_mode=render,
-                opponent_policy=bot2.play_policy 
+                opponent_policy=bot2.play_policy
             )
             bot1_wins = game.play_out(bot1.play_policy)
             if bot1_wins:
                 score1 += 1
         return score1 / nr_games
 
-    def save_bot(self, bot: HexBot, modelname, filename, metadata: Optional[Dict] = None):
+    def save_bot(self, bot: HexBot, modelname: str, filename: str, metadata: Optional[Dict] = None):
         """ Save bot state and performance metadata. """
-        # TODO(c): add some metadata to a 'global' data file in
-        #          the root directory of the run
         data = {
             "name": modelname,
             "meta": metadata,
@@ -71,11 +68,13 @@ class BotEvolution:
 
         torch.save(data, filename)
 
-    def load_bot(self, filename):
+    def load_bot(self, filename: str):
+        """ Load bot from file. """
         data = torch.load(filename)
         return data["bot"]
 
-    def init_gen_worker_(self, gen_, opponent_pool_, botdata_folder_):
+    def init_gen_worker_(self, gen_: int, opponent_pool_: List[Tuple[float, Callable]], botdata_folder_: str):
+        """ [Multiprocessing] Initialise global variables for worker. """
         global gen
         global opponent_pool
         global botdata_folder
@@ -84,11 +83,15 @@ class BotEvolution:
         opponent_pool = opponent_pool_
         botdata_folder = botdata_folder_
 
-    def train_async(self, idx_bot):
+    def train_async(self, idx_bot: Tuple[int, HexBot]) -> float:
+        """ 
+        Perform training on HexBot `bot` with index `idx`. 
+
+        Return performance score (=win rate) between 0 and 1.
+        """
         idx, bot = idx_bot
 
         print(f"Training bot {idx+1}/{self.bots_per_generation}.")
-        # TODO(cw/cd): introduce further hyperparameters as params to BotTrainer
         trainer = BotTrainer(bot, game_size=self.hex_size,
                              opponent_pool=opponent_pool,
                              sampling_updates=50,
@@ -105,7 +108,10 @@ class BotEvolution:
 
         return metadata["score"]
 
-    def evolve(self, subfolder=None):
+    def evolve(self, subfolder: str = None):
+        """ 
+        Run multiple generations of training.
+        """
         if subfolder is None:
             date_prefix = datetime.now().strftime("%y%m%d%H%M")
             # generate random postfix
@@ -116,8 +122,6 @@ class BotEvolution:
         os.mkdir(folder)
         botdata_folder = f"{folder}/botdata"
         os.mkdir(botdata_folder)
-        report_file = f"{folder}/report.md"
-        data_file = f"{folder}/data"
 
         opponent_pool = []  # start playing against random policy
         for gen in range(self.generations):
@@ -127,13 +131,10 @@ class BotEvolution:
 
             idx_bot = enumerate(self.bots)
 
-            with Pool(processes=self.bots_per_generation, 
-                      initializer=self.init_gen_worker_, 
+            with Pool(processes=self.bots_per_generation,
+                      initializer=self.init_gen_worker_,
                       initargs=(gen, opponent_pool, botdata_folder)) as pool:
                 scores = pool.map(self.train_async, idx_bot)
-
-            # self.init_gen_worker_(gen, opponent_pool, botdata_folder)
-            # scores = map(self.train_async, idx_bot)
 
             # Sort bots by score
             sorted_scores = sorted(
@@ -146,41 +147,30 @@ class BotEvolution:
             for score, idx, _ in sorted_bots:
                 print(f"{score}, bot {idx+1}")
 
-            # TODO(cw/cd): output metadata to file here
-
             # Update opponent pool:
-            #  1. half the weight of existing opponents
+            #  1. decrease the weight of existing opponents
             #  2. add the bots of this round with weight 1
             opponent_pool = [(weight/1.02, policy)
-                            for weight, policy in opponent_pool]
+                             for weight, policy in opponent_pool]
             opponent_pool += [(1., bot.play_policy) for bot in self.bots]
 
-            # Derive next generation of bots from this generation,
-            # currently: cycle through top third
+            # Derive next generation of bots from this generation:
+            # discard the worst, double the best
             nr_bots_kept = self.bots_per_generation-1
             for bot_idx in range(self.bots_per_generation):
-                self.bots[bot_idx] = deepcopy(sorted_bots[bot_idx % nr_bots_kept][2])
+                self.bots[bot_idx] = deepcopy(
+                    sorted_bots[bot_idx % nr_bots_kept][2])
 
             if self.human_monitoring_enabled:
-                self.play1v1(bot1=self.bots[0], bot2=self.bots[1], nr_games=1,render="human")
-
-
+                self.play1v1(
+                    bot1=self.bots[0], bot2=self.bots[1], nr_games=1, render="human")
 
         print("Evolution cycle complete.")
-        # TODO(CW/CD): add more output here
-        # output best bot weights to a specific file (or create link)
-        # output metadata about evolution process to file
 
 
-"""
-+++ SEE YOUR BOTS FIGHT!! +++
-Call for a fight like this from console:
-    >>> import bot_evolution
-    >>> bot_evolution.make_them_play("20230526_1ef8162b/botdata/gen3bot8", "20230526_1ef8162b/botdata/gen3bot2", 2)
-"""
-def make_them_play(bot1_filename, bot2_filename, nr_games):
+def make_them_play(bot1_filename: str, bot2_filename: str, nr_games: int):
+    """ Display a given number of games between bot1 and bot2. """
     bot_evo_arena = BotEvolution()
-    # bot_evo.evolve()
     bot1data = torch.load("./bot_evolution_output/" + bot1_filename)
     bot1 = bot1data["bot"]
     bot2data = torch.load("./bot_evolution_output/" + bot2_filename)
@@ -188,9 +178,11 @@ def make_them_play(bot1_filename, bot2_filename, nr_games):
     bot_evo_arena.play1v1(bot1, bot2, nr_games, "human")
 
 
-def main():
+def test():
+    """ Run an evolution cycle with default parameters. """
     bot_evo = BotEvolution(monitoring=True)
     bot_evo.evolve()
 
+
 if __name__ == "__main__":
-    main()
+    test()

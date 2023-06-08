@@ -1,8 +1,8 @@
 from typing import List
-import torch
-import torch.nn as nn
 import random
 import numpy as np
+import torch
+import torch.nn as nn
 from torch.distributions import Categorical
 
 
@@ -56,7 +56,7 @@ class HexBot(nn.Module):
         v = self.value_tail(mid)
         return pi, v
 
-    def play_policy(self, flat_state: np.ndarray, free_tiles:List[int]):
+    def play_policy(self, flat_state: np.ndarray, free_tiles: List[int]):
         with torch.no_grad():
             pi, v = self.forward(torch.tensor(flat_state, dtype=torch.float32))
             mask = torch.ones_like(pi) * (-torch.inf)

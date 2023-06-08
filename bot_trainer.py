@@ -4,14 +4,11 @@ from hex_bot import HexBot
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Tuple
 import numpy as np
-from matplotlib import pyplot as plt
 import time
-import json
 
 device = torch.device("cpu")
-
 
 class BotTrainer:
     """ PPO Trainer for hex_game bots. """
@@ -30,7 +27,6 @@ class BotTrainer:
                  loss_valuefn_weight: float = 0.5,
                  loss_entropy_weight: float = 0.01,
                  ):
-        # TODO(cw/cd): move all hyperparameters + defaults into method definition
 
         self.game_size = game_size
         self.total_actions = game_size * game_size
@@ -53,7 +49,7 @@ class BotTrainer:
 
         # Generalized Advantage Estimation  hyperparameters
         self.GAEgamma = advantage_estimate_gamma   # discount factor
-        self.GAElambda = advantage_estimate_lambda  # compromise between
+        self.GAElambda = advantage_estimate_lambda  # compromise between:
         # low variance, high bias (`GAElambda`=0)
         # low bias, high variance (`GAElambda`=1)
 
@@ -61,7 +57,6 @@ class BotTrainer:
         self.loss_c1 = loss_valuefn_weight
         self.loss_c2 = loss_entropy_weight
 
-        # TODO (long-term): Instantiate these games in parallel processes for speed up
         # Games are instantiated (Opponent Policy is currently none)
         self.start_colors = [HexGame.RED if worker_index % 2 == 0 else HexGame.BLUE
                              for worker_index in range(self.workers)]
@@ -190,13 +185,15 @@ class BotTrainer:
         return advantages
 
     def calc_loss(self, samples: Dict, CLIPeps: float) -> torch.Tensor:
-        """ Calculate loss """
+        """ 
+        Calculate PPO-style loss function. 
+        This is a combination of 
+            - a clipped policy-loss `loss_CLIP`
+            - a value function loss `loss_VF`
+            - an entropy loss `loss_S`
+        """
 
         advantages = samples["advantages"]
-        # Normalise advantages?
-        # adv_mean, adv_stddev = torch.std_mean(advantages)
-        # advantages = (advantages - adv_mean)/adv_stddev
-
         states = samples["states"]
         actions = samples["actions"]
         action_masks = samples["action_masks"]
@@ -213,8 +210,7 @@ class BotTrainer:
         # get sampled returns - this is what "value" is trying to estimate
         old_returns = samples["values"] + samples["advantages"]
 
-        # Compute value function loss
-        # TODO(CW): Compute clipped VF Loss?
+        # Compute value function loss: we do NOT clip this loss
         loss_VF = torch.mean((new_value.squeeze() - old_returns)**2)
 
         # Compute entropy bonus loss
@@ -292,12 +288,9 @@ def main():
     hex_size = 8
     bot_brain = HexBot(
         hex_size=hex_size, inner_neurons_1=30, inner_neurons_2=30).to(device)
-    # bot_brain = Debug_Bot(hex_size)
 
     trainer = BotTrainer(game_size=hex_size, bot_brain=bot_brain)
-    # test_sample = trainer.sample()
-    # print(test_sample)
-    trainer.train(plot_stats=True)
+    trainer.train()
 
 
 if __name__ == "__main__":
