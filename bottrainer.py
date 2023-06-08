@@ -303,8 +303,8 @@ class BotTrainer:
                 # scheduler.step()
 
         samples = self.sample()
-        self.win_rate(samples["rewards"])
-        return {"score": win_rate}
+        score = self.win_rate(samples["rewards"])
+        return {"score": score}
 
 
 def test():

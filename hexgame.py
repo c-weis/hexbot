@@ -399,19 +399,19 @@ class HexGame:
                         pix_size/4
                     )
 
-        if self.render_enabled:
-            # Copy our drawings from `canvas` to the visible window
-            self.window.blit(canvas, canvas.get_rect())
-            pygame.event.pump()
-            pygame.display.update()
+        # Copy our drawings from `canvas` to the visible window
+        self.window.blit(canvas, canvas.get_rect())
+        pygame.event.pump()
+        pygame.display.update()
 
-            # Make sure human-rendering occurs at predefined framerate.
-            # Automatically add a delay to keep the framerate stable.
-            self.clock.tick(self.render_fps)
-        else:  # rgb_array
-            return np.transpose(
-                np.array(pygame.surfarray.pixels3d(canvas)), axes=(1, 0, 2)
-            )
+        # Make sure rendering occurs at predefined framerate.
+        # Automatically add a delay to keep the framerate stable.
+        self.clock.tick(self.render_fps)
+
+    def __del__(self):
+        if self.window is not None:
+            pygame.display.quit()
+            pygame.quit()
 
 
 def test():
